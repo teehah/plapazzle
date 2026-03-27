@@ -18,4 +18,10 @@ describe('buildAndSolve (No.6)', () => {
     buildAndSolve(NO6_BOARD.cells, PIECES, () => { count++ })
     expect(count).toBeGreaterThan(0)
   }, 60000) // 60秒タイムアウト
+
+  it('全解数は9936（= 4968 × 2、ボードの2回転対称による）', () => {
+    let count = 0
+    buildAndSolve(NO6_BOARD.cells, PIECES, () => { count++ })
+    expect(count).toBe(9936)
+  }, 300000) // 5分タイムアウト
 })
