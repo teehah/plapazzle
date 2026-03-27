@@ -1,0 +1,56 @@
+import type { Solution } from '../core/solver'
+import { cellKey, cellToSvgPoints } from '../core/grid'
+import { NO6_BOARD } from '../data/no6'
+
+const H = 30  // triangle height in px
+
+const PIECE_COLORS: Record<string, string> = {
+  I: '#e74c3c', O: '#3498db', X: '#2ecc71', C: '#f39c12',
+  E: '#9b59b6', P: '#1abc9c', F: '#e67e22', V: '#34495e',
+  S: '#e91e63', J: '#00bcd4', H: '#8bc34a', G: '#ff5722',
+}
+
+function pointsStr(pts: [[number,number],[number,number],[number,number]]): string {
+  return pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+}
+
+type Props = { solution: Solution | null }
+
+export function Board({ solution }: Props) {
+  const cells = NO6_BOARD.cells
+
+  let maxX = 0, maxY = 0
+  for (const cell of cells) {
+    const pts = cellToSvgPoints(cell, H)
+    for (const [x, y] of pts) {
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+    }
+  }
+
+  return (
+    <svg
+      width={maxX + 4}
+      height={maxY + 4}
+      style={{ display: 'block', margin: '0 auto' }}
+    >
+      <g transform="translate(2,2)">
+        {cells.map(cell => {
+          const key = cellKey(cell)
+          const pts = cellToSvgPoints(cell, H)
+          const pieceId = solution?.get(key)
+          const fill = pieceId ? PIECE_COLORS[pieceId] ?? '#ccc' : '#f0f0f0'
+          return (
+            <polygon
+              key={key}
+              points={pointsStr(pts)}
+              fill={fill}
+              stroke="#333"
+              strokeWidth={0.5}
+            />
+          )
+        })}
+      </g>
+    </svg>
+  )
+}
