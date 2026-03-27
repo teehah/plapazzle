@@ -81,4 +81,15 @@ describe('uniqueOrientations', () => {
     const J = PIECES.find(p => p.id === 'J')!
     expect(uniqueOrientations(J.cells)).toHaveLength(12)
   })
+
+  it('全12ピースは互いに異なる形状（向き間で重複なし）', () => {
+    const allKeys = new Set<string>()
+    for (const p of PIECES) {
+      for (const orientation of uniqueOrientations(p.cells)) {
+        const key = orientation.map(c => `${c.row},${c.col},${c.dir}`).join('|')
+        expect(allKeys.has(key), `ピース ${p.id} の向きが別ピースと重複`).toBe(false)
+        allKeys.add(key)
+      }
+    }
+  })
 })
