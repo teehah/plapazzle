@@ -4,6 +4,11 @@ export function cellKey(c: Cell): string {
   return `${c.row},${c.col},${c.dir}`
 }
 
+/**
+ * Returns the 3 logical neighbors of a cell (unconditionally).
+ * Neighbors may have negative row/col if c is at the board edge.
+ * Callers are responsible for filtering out cells outside the board boundary.
+ */
 export function neighbors(c: Cell): Cell[] {
   if (c.dir === 0) {
     // △: 左▽, 右▽(同col), 上▽
