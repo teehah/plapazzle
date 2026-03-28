@@ -1,10 +1,5 @@
 import type { PuzzleDef } from '../core/puzzle'
-
-export type PuzzleRecord = {
-  bestTimeMs: number | null
-  discoveredSolutionIds: number[]
-  totalClears: number
-}
+import type { PuzzleRecord } from '../storage/db'
 
 type Props = {
   puzzles: PuzzleDef[]
