@@ -5,9 +5,10 @@ import * as THREE from 'three'
 import type { PuzzleDef } from '../core/puzzle'
 import { initGameState, gameReducer } from '../game/state'
 import type { GameState } from '../game/state'
-import { getOrientedCells, getPlacedCells, gridToWorld } from '../game/placement'
+import { getOrientedCells, getPlacedCells } from '../game/placement'
 import { checkCleared } from '../game/clear-check'
 import { findSnapPosition } from '../game/snap'
+import { worldToSvgDrop, svgSnapToWorld } from '../game/coords'
 import { BoardMesh } from '../three/BoardMesh'
 import { PieceMesh } from '../three/PieceMesh'
 import { Lighting } from '../three/Lighting'
@@ -269,15 +270,18 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           }
         }
 
-        // Convert Three.js world position to SVG coordinates for snap detection.
-        // SVG(sx,sy) -> Three.js geometry(sx,-sy) -> world(sx-boardOffset.x, -sy-boardOffset.y)
-        // Inverse: sx = world.x + boardOffset.x, sy = -(world.y + boardOffset.y)
-        const svgDropX = ps.position.x + boardOffset.x
-        const svgDropY = -(ps.position.y + boardOffset.y)
+        // ピースの mesh position + ジオメトリオフセット → SVG ドロップ座標
+        const svgDrop = worldToSvgDrop(
+          ps.position,
+          oriented,
+          CELL_SIZE,
+          puzzle.gridType,
+          boardOffset,
+        )
 
         const snapPos = findSnapPosition(
           oriented,
-          { x: svgDropX, y: svgDropY },
+          svgDrop,
           puzzle.board,
           occupied,
           CELL_SIZE,
@@ -285,21 +289,20 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
         )
 
         if (snapPos) {
-          // Calculate world position for snapped piece
-          const placedCells = getPlacedCells(oriented, snapPos)
-          const svgPositions = placedCells.map(c => gridToWorld(c, CELL_SIZE, puzzle.gridType))
-          const svgCx = svgPositions.reduce((s, p) => s + p.x, 0) / svgPositions.length
-          const svgCy = svgPositions.reduce((s, p) => s + p.y, 0) / svgPositions.length
-
-          // Convert SVG centroid to Three.js world position (accounting for board centering)
-          const worldX = svgCx - boardOffset.x
-          const worldY = -svgCy - boardOffset.y
+          // スナップ後のワールド座標（ジオメトリオフセット考慮済み）
+          const worldPos = svgSnapToWorld(
+            oriented,
+            snapPos,
+            CELL_SIZE,
+            puzzle.gridType,
+            boardOffset,
+          )
 
           dispatch({
             type: 'snap',
             pieceId: draggingPieceId,
             gridPosition: snapPos,
-            worldPosition: { x: worldX, y: worldY },
+            worldPosition: worldPos,
             timestamp: Date.now(),
           })
           soundEngine.playSnap()
