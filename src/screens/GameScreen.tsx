@@ -1,5 +1,5 @@
-import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { useReducer, useEffect, useState, useRef, useMemo } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PuzzleDef } from '../core/puzzle'
@@ -80,7 +80,6 @@ function Scene({
   darkMode,
   draggingPieceId,
   setDraggingPieceId,
-  onClear,
 }: {
   puzzle: PuzzleDef
   state: GameState
@@ -91,9 +90,8 @@ function Scene({
   darkMode: boolean
   draggingPieceId: string | null
   setDraggingPieceId: (id: string | null) => void
-  onClear: (state: GameState, clearTimeMs: number) => void
 }) {
-  const { camera, gl, scene } = useThree()
+  const { camera, gl } = useThree()
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
 
   // ドラッグ状態（全て ref — 同期的に読み書き）
@@ -141,6 +139,7 @@ function Scene({
 
       const ps = stateRef.current.pieces.find(p => p.pieceId === pieceId)
       if (!ps) return
+
 
       if (ps.onBoard) {
         dispatch({ type: 'unsnap', pieceId, position: ps.position, timestamp: Date.now() })
@@ -261,6 +260,7 @@ function Scene({
         return (
           <group
             key={ps.pieceId}
+            position={[ps.position.x, ps.position.y, zPos]}
             userData={{ pieceId: ps.pieceId }}
             ref={(ref) => {
               if (ref) pieceMeshMap.current.set(ps.pieceId, ref)
@@ -272,7 +272,7 @@ function Scene({
               cellSize={CELL_SIZE}
               gridType={puzzle.gridType}
               color={color}
-              position={[ps.position.x, ps.position.y, zPos]}
+              position={[0, 0, 0]}
               scale={1}
             />
           </group>
@@ -367,7 +367,6 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           darkMode={darkMode}
           draggingPieceId={draggingPieceId}
           setDraggingPieceId={setDraggingPieceId}
-          onClear={onClear}
         />
       </Canvas>
     </div>
