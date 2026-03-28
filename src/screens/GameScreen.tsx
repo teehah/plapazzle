@@ -29,6 +29,8 @@ const PIECE_COLORS: Record<string, string> = {
 type Props = {
   puzzle: PuzzleDef
   soundEngine: SoundEngine
+  soundEnabled: boolean
+  onToggleSound: () => void
   onClear: (state: GameState, clearTimeMs: number) => void
 }
 
@@ -102,7 +104,7 @@ function SceneContent({
   return <>{children}</>
 }
 
-export function GameScreen({ puzzle, soundEngine, onClear }: Props) {
+export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, onClear }: Props) {
   const [state, dispatch] = useReducer(gameReducer, puzzle, initGameState)
   const [elapsed, setElapsed] = useState(0)
   const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null)
@@ -338,6 +340,19 @@ export function GameScreen({ puzzle, soundEngine, onClear }: Props) {
         }}
       >
         {formatTime(elapsed)}
+      </div>
+      <div
+        onClick={onToggleSound}
+        style={{
+          position: 'absolute', top: 12, right: 16, zIndex: 10,
+          padding: '4px 12px', borderRadius: 12,
+          background: soundEnabled ? 'rgba(100,200,255,0.15)' : 'rgba(255,255,255,0.05)',
+          border: `1px solid ${soundEnabled ? 'rgba(100,200,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+          color: soundEnabled ? 'rgba(100,200,255,0.8)' : 'rgba(255,255,255,0.3)',
+          fontSize: 12, cursor: 'pointer', userSelect: 'none',
+        }}
+      >
+        {soundEnabled ? 'SOUND ON' : 'SOUND OFF'}
       </div>
       <Canvas style={{ width: '100%', height: '100%', touchAction: 'none' }}>
         <OrthographicCamera makeDefault position={[0, 0, 50]} zoom={2} />
