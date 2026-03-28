@@ -23,6 +23,7 @@
  */
 import type { Cell } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
+import { GRID_OPS } from '../core/grid-ops'
 import type { Position, GridPosition } from './state'
 import { gridToWorld, getPlacedCells } from './placement'
 
@@ -39,6 +40,29 @@ export function svgCentroid(
     x: positions.reduce((s, p) => s + p.x, 0) / positions.length,
     y: positions.reduce((s, p) => s + p.y, 0) / positions.length,
   }
+}
+
+/**
+ * セル配列の SVG 頂点 bounding box 中心を返す。
+ * cellsToGeometry のセンタリングと一致する。
+ */
+export function svgBboxCenter(
+  cells: Cell[],
+  cellSize: number,
+  gridType: GridType,
+): Position {
+  const ops = GRID_OPS[gridType]
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const cell of cells) {
+    const pts = ops.cellToSvgPoints(cell, cellSize)
+    for (const [px, py] of pts) {
+      if (px < minX) minX = px
+      if (px > maxX) maxX = px
+      if (py < minY) minY = py
+      if (py > maxY) maxY = py
+    }
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
 }
 
 /**
@@ -69,8 +93,8 @@ export function worldToSvgDrop(
  * orientedCells を snapGridPos に配置した時、ボードと整列する
  * mesh position を返す。
  *
- * PieceMesh はジオメトリがセンタリングされているので、
- * mesh.position = placedCells の SVG 重心のワールド座標。
+ * cellsToGeometry は SVG 頂点の bounding box 中心でセンタリングするので、
+ * mesh.position = placedCells の SVG bbox 中心のワールド座標。
  */
 export function svgSnapToWorld(
   orientedCells: Cell[],
@@ -80,9 +104,9 @@ export function svgSnapToWorld(
   boardOffset: Position,
 ): Position {
   const placedCells = getPlacedCells(orientedCells, snapGridPos)
-  const placedCenter = svgCentroid(placedCells, cellSize, gridType)
+  const placedCenter = svgBboxCenter(placedCells, cellSize, gridType)
 
-  // SVG centroid → world: worldX = svgX - boardOffset.x, worldY = -svgY - boardOffset.y
+  // SVG bbox center → world: worldX = svgX - boardOffset.x, worldY = -svgY - boardOffset.y
   return {
     x: placedCenter.x - boardOffset.x,
     y: -placedCenter.y - boardOffset.y,

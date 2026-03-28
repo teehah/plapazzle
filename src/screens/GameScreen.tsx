@@ -57,6 +57,91 @@ function computeBoardOffset(board: Cell[], cellSize: number, gridType: GridType)
 }
 
 /**
+ * ボードのワールド座標 bbox を返す。
+ * ジオメトリはセンタリング済みなので、ボードメッシュ原点を中心に広がる。
+ */
+function computeBoardWorldBbox(board: Cell[], cellSize: number, gridType: GridType) {
+  const ops = GRID_OPS[gridType]
+  let minSvgX = Infinity, maxSvgX = -Infinity, minSvgY = Infinity, maxSvgY = -Infinity
+  for (const cell of board) {
+    const pts = ops.cellToSvgPoints(cell, cellSize)
+    for (const [px, py] of pts) {
+      if (px < minSvgX) minSvgX = px
+      if (px > maxSvgX) maxSvgX = px
+      if (py < minSvgY) minSvgY = py
+      if (py > maxSvgY) maxSvgY = py
+    }
+  }
+  // ジオメトリ座標: x = svgX, y = -svgY → センタリング後: 原点中心
+  const halfW = (maxSvgX - minSvgX) / 2
+  const halfH = (maxSvgY - minSvgY) / 2
+  return { minX: -halfW, maxX: halfW, minY: -halfH, maxY: halfH }
+}
+
+/**
+ * ピースのワールド座標 bbox を返す。
+ * meshPos = ジオメトリ bbox center のワールド座標。
+ */
+function computePieceWorldBbox(
+  oriented: Cell[], cellSize: number, gridType: GridType, meshPos: { x: number; y: number },
+) {
+  const ops = GRID_OPS[gridType]
+  let minSvgX = Infinity, maxSvgX = -Infinity, minSvgY = Infinity, maxSvgY = -Infinity
+  for (const cell of oriented) {
+    const pts = ops.cellToSvgPoints(cell, cellSize)
+    for (const [px, py] of pts) {
+      if (px < minSvgX) minSvgX = px
+      if (px > maxSvgX) maxSvgX = px
+      if (py < minSvgY) minSvgY = py
+      if (py > maxSvgY) maxSvgY = py
+    }
+  }
+  const halfW = (maxSvgX - minSvgX) / 2
+  const halfH = (maxSvgY - minSvgY) / 2
+  return {
+    minX: meshPos.x - halfW, maxX: meshPos.x + halfW,
+    minY: meshPos.y - halfH, maxY: meshPos.y + halfH,
+  }
+}
+
+/**
+ * ピースがボードと重なっている場合、最短距離でボード外にはじき出した位置を返す。
+ * 重なっていなければ null。
+ */
+function pushOutOfBoard(
+  piecePos: { x: number; y: number },
+  oriented: Cell[],
+  cellSize: number,
+  gridType: GridType,
+  boardBbox: { minX: number; maxX: number; minY: number; maxY: number },
+): { x: number; y: number } | null {
+  const margin = cellSize * 0.2  // 少し余裕を持たせる
+  const pBbox = computePieceWorldBbox(oriented, cellSize, gridType, piecePos)
+
+  // 重なっていなければそのまま
+  if (pBbox.maxX <= boardBbox.minX || pBbox.minX >= boardBbox.maxX ||
+      pBbox.maxY <= boardBbox.minY || pBbox.minY >= boardBbox.maxY) {
+    return null
+  }
+
+  // 4方向への押し出し距離を計算し、最短を選ぶ
+  const pushLeft  = boardBbox.minX - pBbox.maxX - margin
+  const pushRight = boardBbox.maxX - pBbox.minX + margin
+  const pushDown  = boardBbox.minY - pBbox.maxY - margin
+  const pushUp    = boardBbox.maxY - pBbox.minY + margin
+
+  const candidates = [
+    { dx: pushLeft,  dy: 0, dist: Math.abs(pushLeft) },
+    { dx: pushRight, dy: 0, dist: Math.abs(pushRight) },
+    { dx: 0, dy: pushDown,  dist: Math.abs(pushDown) },
+    { dx: 0, dy: pushUp,    dist: Math.abs(pushUp) },
+  ]
+  candidates.sort((a, b) => a.dist - b.dist)
+  const best = candidates[0]
+  return { x: piecePos.x + best.dx, y: piecePos.y + best.dy }
+}
+
+/**
  * 画面座標 → Three.js ワールド座標（OrthographicCamera）
  */
 function screenToWorld(
@@ -79,6 +164,7 @@ function Scene({
   state,
   dispatch,
   boardOffset,
+  boardBbox,
   soundEngine,
   isMobile,
   darkMode,
@@ -89,6 +175,7 @@ function Scene({
   state: GameState
   dispatch: React.Dispatch<any>
   boardOffset: { x: number; y: number }
+  boardBbox: { minX: number; maxX: number; minY: number; maxY: number }
   soundEngine: SoundEngine
   isMobile: boolean
   darkMode: boolean
@@ -216,7 +303,7 @@ function Scene({
       } else {
         // ドラッグ終了 → スナップ判定
         const ps = currentState.pieces.find(p => p.uid === pid)!
-        const piece = puzzle.pieces.find(p => p.id === pid)!
+        const piece = puzzle.pieces[ps.pieceIndex]
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
 
         const occupied: Cell[] = []
@@ -236,6 +323,12 @@ function Scene({
           const worldPos = svgSnapToWorld(oriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset)
           dispatch({ type: 'snap', uid: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: Date.now() })
           soundEngine.playSnap()
+        } else {
+          // スナップしなかった場合、ピースがボードに重なっていたらはじき出す
+          const pushed = pushOutOfBoard(ps.position, oriented, CELL_SIZE, puzzle.gridType, boardBbox)
+          if (pushed) {
+            dispatch({ type: 'move', uid: pid, position: pushed, timestamp: Date.now() })
+          }
         }
       }
     }
@@ -249,7 +342,7 @@ function Scene({
       canvas.removeEventListener('pointerup', handleUp)
       if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
     }
-  }, [camera, gl, dispatch, puzzle, boardOffset, soundEngine, isMobile, setDraggingPieceId])
+  }, [camera, gl, dispatch, puzzle, boardOffset, boardBbox, soundEngine, isMobile, setDraggingPieceId])
 
   return (
     <>
@@ -296,6 +389,11 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
 
   const boardOffset = useMemo(
     () => computeBoardOffset(puzzle.board, CELL_SIZE, puzzle.gridType),
+    [puzzle],
+  )
+
+  const boardBbox = useMemo(
+    () => computeBoardWorldBbox(puzzle.board, CELL_SIZE, puzzle.gridType),
     [puzzle],
   )
 
@@ -367,6 +465,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           state={state}
           dispatch={dispatch}
           boardOffset={boardOffset}
+          boardBbox={boardBbox}
           soundEngine={soundEngine}
           isMobile={isMobile}
           darkMode={darkMode}

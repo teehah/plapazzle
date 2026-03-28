@@ -3,7 +3,8 @@ import { cellKey } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
 import { GRID_OPS } from '../core/grid-ops'
 import type { Position, GridPosition } from './state'
-import { gridToWorld, getPlacedCells } from './placement'
+import { getPlacedCells } from './placement'
+import { svgBboxCenter } from './coords'
 
 /**
  * ボードの SVG bounding box を計算する。
@@ -30,10 +31,11 @@ function boardBoundingBox(
 /**
  * Find a valid snap position for a piece being dropped on the board.
  *
- * ルール: ドロップ重心がボード領域内にあれば、必ず有効な配置にスナップする。
- * ボード領域外であればスナップしない。
- *
- * 全有効配置の中から、ドロップ位置に最も近いものを返す。
+ * ルール:
+ * 1. ドロップ位置がボード内にある場合のみスナップを試みる
+ * 2. 最も近い有効配置を選ぶ
+ * 3. スナップ先とドロップ位置が離れすぎていたらスナップしない
+ *    （ピースの中心がボード外にあるのにボード端に吸い付くのを防ぐ）
  */
 export function findSnapPosition(
   orientedCells: Cell[],
@@ -45,14 +47,13 @@ export function findSnapPosition(
 ): GridPosition | null {
   if (boardCells.length === 0) return null
 
-  // ドロップ重心がボードの bounding box 内にあるか判定
+  // ドロップ位置がボード内にあるか判定（マージンなし）
   const bbox = boardBoundingBox(boardCells, cellSize, gridType)
-  const margin = cellSize * 0.1  // ごくわずかなマージン
   if (
-    dropPosition.x < bbox.minX - margin ||
-    dropPosition.x > bbox.maxX + margin ||
-    dropPosition.y < bbox.minY - margin ||
-    dropPosition.y > bbox.maxY + margin
+    dropPosition.x < bbox.minX ||
+    dropPosition.x > bbox.maxX ||
+    dropPosition.y < bbox.minY ||
+    dropPosition.y > bbox.maxY
   ) {
     return null
   }
@@ -96,12 +97,10 @@ export function findSnapPosition(
       }
       if (!valid) continue
 
-      // この配置の重心とドロップ位置の距離
-      const positions = placed.map(c => gridToWorld(c, cellSize, gridType))
-      const cx = positions.reduce((s, p) => s + p.x, 0) / positions.length
-      const cy = positions.reduce((s, p) => s + p.y, 0) / positions.length
-      const dx = cx - dropPosition.x
-      const dy = cy - dropPosition.y
+      // この配置の bbox 中心とドロップ位置の距離
+      const center = svgBboxCenter(placed, cellSize, gridType)
+      const dx = center.x - dropPosition.x
+      const dy = center.y - dropPosition.y
       const distSq = dx * dx + dy * dy
 
       if (distSq < bestDistSq) {
@@ -109,6 +108,13 @@ export function findSnapPosition(
         bestOffset = { row: dr, col: dc }
       }
     }
+  }
+
+  // スナップ先が遠すぎる場合はスナップしない
+  // （ピース中心がボード端にあり、最寄り有効配置がボード内部にしかない場合を防ぐ）
+  const maxSnapDist = cellSize * 1.5
+  if (bestDistSq > maxSnapDist * maxSnapDist) {
+    return null
   }
 
   return bestOffset
