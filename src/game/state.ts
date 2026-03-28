@@ -39,17 +39,30 @@ export type GameAction =
   | { type: 'unsnap'; pieceId: string; position: Position; timestamp: number }
 
 export function initGameState(puzzle: PuzzleDef): GameState {
+  const pieces: PieceState[] = puzzle.pieces.map(p => ({
+    pieceId: p.id,
+    position: { x: 0, y: 0 },
+    orientationIndex: 0,
+    flipped: false,
+    onBoard: false,
+    gridPosition: null,
+  }))
+
+  // Place pieces in a circle around the origin
+  const radius = 250
+  const angleStep = (2 * Math.PI) / pieces.length
+  pieces.forEach((p, i) => {
+    const angle = angleStep * i + (Math.random() - 0.5) * 0.8
+    p.position = {
+      x: Math.cos(angle) * (radius + Math.random() * 50),
+      y: Math.sin(angle) * (radius + Math.random() * 50),
+    }
+  })
+
   return {
     puzzleId: puzzle.id,
     gridType: puzzle.gridType,
-    pieces: puzzle.pieces.map(p => ({
-      pieceId: p.id,
-      position: { x: 0, y: 0 },
-      orientationIndex: 0,
-      flipped: false,
-      onBoard: false,
-      gridPosition: null,
-    })),
+    pieces,
     actions: [],
     startedAt: null,
   }
