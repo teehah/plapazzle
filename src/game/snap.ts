@@ -7,12 +7,10 @@ import { gridToWorld, worldToNearestGrid, getPlacedCells } from './placement'
 /**
  * Find a valid snap position for a piece being dropped on the board.
  *
- * 1. Find the nearest board cell to dropPosition
- * 2. Check if distance is within threshold (cellSize * 1.5)
- * 3. Try each cell in orientedCells as the reference cell aligned to nearestCell
- * 4. For each candidate offset: translate all orientedCells by that offset
- * 5. Check if ALL translated cells are on the board AND not in occupiedCells
- * 6. Return the first valid GridPosition, or null if none found
+ * 1. Find all board cells within threshold distance of dropPosition
+ * 2. For each nearby cell, try each oriented cell as reference
+ * 3. Check if the resulting placement is fully on-board and non-overlapping
+ * 4. Among valid placements, return the one closest to the drop position
  */
 export function findSnapPosition(
   orientedCells: Cell[],
@@ -22,48 +20,55 @@ export function findSnapPosition(
   cellSize: number,
   gridType: GridType,
 ): GridPosition | null {
-  // 1. Find nearest board cell to drop position
-  const nearestCell = worldToNearestGrid(
-    dropPosition.x,
-    dropPosition.y,
-    cellSize,
-    gridType,
-    boardCells,
-  )
-  if (nearestCell === null) return null
+  if (boardCells.length === 0) return null
 
-  // 2. Check if distance is within threshold
-  const nearestWorld = gridToWorld(nearestCell, cellSize, gridType)
-  const dx = nearestWorld.x - dropPosition.x
-  const dy = nearestWorld.y - dropPosition.y
-  const dist = Math.sqrt(dx * dx + dy * dy)
   const threshold = cellSize * 1.5
-  if (dist > threshold) return null
+  const thresholdSq = threshold * threshold
 
-  // Build lookup sets for fast membership checks
+  // Find all board cells within threshold
+  const nearbyCells: { cell: Cell; distSq: number }[] = []
+  for (const cell of boardCells) {
+    const center = gridToWorld(cell, cellSize, gridType)
+    const dx = center.x - dropPosition.x
+    const dy = center.y - dropPosition.y
+    const distSq = dx * dx + dy * dy
+    if (distSq <= thresholdSq) {
+      nearbyCells.push({ cell, distSq })
+    }
+  }
+
+  if (nearbyCells.length === 0) return null
+
+  // Sort by distance (try closest first)
+  nearbyCells.sort((a, b) => a.distSq - b.distSq)
+
   const boardSet = new Set(boardCells.map(cellKey))
   const occupiedSet = new Set(occupiedCells.map(cellKey))
 
-  // 3. Try each cell in orientedCells as the reference cell aligned to nearestCell
-  for (const refCell of orientedCells) {
-    // The offset that aligns refCell to nearestCell
-    const offset: GridPosition = {
-      row: nearestCell.row - refCell.row,
-      col: nearestCell.col - refCell.col,
-    }
+  // Track tried offsets to avoid duplicates
+  const triedOffsets = new Set<string>()
 
-    // 4. Translate all orientedCells by that offset
-    const placed = getPlacedCells(orientedCells, offset)
+  for (const { cell: nearbyCell } of nearbyCells) {
+    for (const refCell of orientedCells) {
+      const offset: GridPosition = {
+        row: nearbyCell.row - refCell.row,
+        col: nearbyCell.col - refCell.col,
+      }
 
-    // 5. Check if ALL translated cells are on the board AND not occupied
-    const allValid = placed.every(c => {
-      const key = cellKey(c)
-      return boardSet.has(key) && !occupiedSet.has(key)
-    })
+      const offsetKey = `${offset.row},${offset.col}`
+      if (triedOffsets.has(offsetKey)) continue
+      triedOffsets.add(offsetKey)
 
-    if (allValid) {
-      // 6. Return the first valid GridPosition
-      return offset
+      const placed = getPlacedCells(orientedCells, offset)
+
+      const allValid = placed.every(c => {
+        const key = cellKey(c)
+        return boardSet.has(key) && !occupiedSet.has(key)
+      })
+
+      if (allValid) {
+        return offset
+      }
     }
   }
 
