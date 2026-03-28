@@ -64,43 +64,59 @@ function computeBoardOffset(board: Cell[], cellSize: number, gridType: GridType)
  * Inner scene component that has access to Three.js camera/gl context.
  * Handles pointer events on the canvas for drag interactions.
  */
+/**
+ * 画面座標 → Three.js ワールド座標変換（OrthographicCamera用）
+ */
+function screenToWorld(
+  clientX: number, clientY: number,
+  camera: THREE.Camera, canvas: HTMLCanvasElement,
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect()
+  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+  const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
+  const vec = new THREE.Vector3(ndcX, ndcY, 0).unproject(camera)
+  return { x: vec.x, y: vec.y }
+}
+
 function SceneContent({
   children,
+  onPointerDownWorld,
   onPointerMoveWorld,
   onPointerUpWorld,
 }: {
   children: React.ReactNode
+  onPointerDownWorld: (worldX: number, worldY: number, clientX: number, clientY: number) => void
   onPointerMoveWorld: (worldX: number, worldY: number, clientX: number, clientY: number) => void
-  onPointerUpWorld: (worldX: number, worldY: number) => void
+  onPointerUpWorld: () => void
 }) {
   const { camera, gl } = useThree()
 
   useEffect(() => {
     const canvas = gl.domElement
 
+    const handleDown = (e: PointerEvent) => {
+      const w = screenToWorld(e.clientX, e.clientY, camera, canvas)
+      onPointerDownWorld(w.x, w.y, e.clientX, e.clientY)
+    }
+
     const handleMove = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect()
-      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
-      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
-      const vec = new THREE.Vector3(ndcX, ndcY, 0).unproject(camera)
-      onPointerMoveWorld(vec.x, vec.y, e.clientX, e.clientY)
+      const w = screenToWorld(e.clientX, e.clientY, camera, canvas)
+      onPointerMoveWorld(w.x, w.y, e.clientX, e.clientY)
     }
 
-    const handleUp = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect()
-      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1
-      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1
-      const vec = new THREE.Vector3(ndcX, ndcY, 0).unproject(camera)
-      onPointerUpWorld(vec.x, vec.y)
+    const handleUp = () => {
+      onPointerUpWorld()
     }
 
+    canvas.addEventListener('pointerdown', handleDown)
     canvas.addEventListener('pointermove', handleMove)
     canvas.addEventListener('pointerup', handleUp)
     return () => {
+      canvas.removeEventListener('pointerdown', handleDown)
       canvas.removeEventListener('pointermove', handleMove)
       canvas.removeEventListener('pointerup', handleUp)
     }
-  }, [camera, gl, onPointerMoveWorld, onPointerUpWorld])
+  }, [camera, gl, onPointerDownWorld, onPointerMoveWorld, onPointerUpWorld])
 
   return <>{children}</>
 }
@@ -166,11 +182,24 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
     }
   }, [])
 
-  const handlePointerDown = useCallback(
-    (pieceId: string, clientX: number, clientY: number, worldX: number, worldY: number) => {
-      // If piece is on board, unsnap it first
+  // PieceMesh の onPointerDown で pieceId を記録（R3F の raycast で hit 判定）
+  const pendingPieceRef = useRef<string | null>(null)
+
+  const handlePiecePointerDown = useCallback((pieceId: string) => {
+    pendingPieceRef.current = pieceId
+  }, [])
+
+  // SceneContent の pointerdown で全座標変換を統一的に処理
+  const handlePointerDownWorld = useCallback(
+    (worldX: number, worldY: number, clientX: number, clientY: number) => {
+      const pieceId = pendingPieceRef.current
+      pendingPieceRef.current = null
+      if (!pieceId) return
+
       const ps = state.pieces.find(p => p.pieceId === pieceId)
-      if (ps && ps.onBoard) {
+      if (!ps) return
+
+      if (ps.onBoard) {
         dispatch({
           type: 'unsnap',
           pieceId,
@@ -183,9 +212,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
       setDraggingPieceId(pieceId)
       dragStartPos.current = { x: clientX, y: clientY }
       dragWorldStart.current = { x: worldX, y: worldY }
-      if (ps) {
-        pieceStartPos.current = { x: ps.position.x, y: ps.position.y }
-      }
+      pieceStartPos.current = { x: ps.position.x, y: ps.position.y }
     },
     [state.pieces],
   )
@@ -226,7 +253,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   )
 
   const handlePointerUpWorld = useCallback(
-    (_worldX: number, _worldY: number) => {
+    () => {
       const pid = draggingRef.current
       if (!pid) return
 
@@ -344,6 +371,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
         <OrthographicCamera makeDefault position={[0, 0, 50]} zoom={2} />
         <Lighting darkMode={darkMode} />
         <SceneContent
+          onPointerDownWorld={handlePointerDownWorld}
           onPointerMoveWorld={handlePointerMoveWorld}
           onPointerUpWorld={handlePointerUpWorld}
         >
@@ -371,8 +399,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
                 scale={1}
                 onPointerDown={e => {
                   e.stopPropagation()
-                  const nativeEvent = e.nativeEvent as PointerEvent
-                  handlePointerDown(ps.pieceId, nativeEvent.clientX, nativeEvent.clientY, e.point.x, e.point.y)
+                  handlePiecePointerDown(ps.pieceId)
                 }}
               />
             )
