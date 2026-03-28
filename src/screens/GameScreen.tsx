@@ -108,8 +108,11 @@ function SceneContent({
 export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, onClear }: Props) {
   const [state, dispatch] = useReducer(gameReducer, puzzle, initGameState)
   const [elapsed, setElapsed] = useState(0)
+  // ドラッグ状態は ref で同期管理（イベントハンドラ用）
+  // state はレンダリング用（z-index 表示切替）
   const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null)
-  const [dragStarted, setDragStarted] = useState(false)
+  const draggingRef = useRef<string | null>(null)
+  const dragStartedRef = useRef(false)
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const dragWorldStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const pieceStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -175,8 +178,9 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           timestamp: Date.now(),
         })
       }
+      draggingRef.current = pieceId
+      dragStartedRef.current = false
       setDraggingPieceId(pieceId)
-      setDragStarted(false)
       dragStartPos.current = { x: clientX, y: clientY }
       dragWorldStart.current = { x: worldX, y: worldY }
       if (ps) {
@@ -188,59 +192,62 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
 
   const handlePointerMoveWorld = useCallback(
     (worldX: number, worldY: number, clientX: number, clientY: number) => {
-      if (!draggingPieceId) return
+      const pid = draggingRef.current
+      if (!pid) return
 
       const dx = clientX - dragStartPos.current.x
       const dy = clientY - dragStartPos.current.y
       const movedEnough = Math.abs(dx) > 5 || Math.abs(dy) > 5
 
-      if (!dragStarted && movedEnough) {
-        setDragStarted(true)
+      if (!dragStartedRef.current && movedEnough) {
+        dragStartedRef.current = true
       }
 
-      if (dragStarted || movedEnough) {
-        // Calculate delta from drag start in world coords
+      if (dragStartedRef.current) {
         const worldDx = worldX - dragWorldStart.current.x
         const worldDy = worldY - dragWorldStart.current.y
 
         let newX = pieceStartPos.current.x + worldDx
         let newY = pieceStartPos.current.y + worldDy
 
-        // Mobile offset: shift piece 20 world units above finger
         if (isMobile) {
           newY += 20
         }
 
         dispatch({
           type: 'move',
-          pieceId: draggingPieceId,
+          pieceId: pid,
           position: { x: newX, y: newY },
           timestamp: Date.now(),
         })
       }
     },
-    [draggingPieceId, dragStarted, isMobile],
+    [isMobile],
   )
 
   const handlePointerUpWorld = useCallback(
     (_worldX: number, _worldY: number) => {
-      if (!draggingPieceId) return
+      const pid = draggingRef.current
+      if (!pid) return
 
-      if (!dragStarted) {
-        // Tap logic
+      // 同期的にクリア — 後続の pointermove が move を dispatch しないようにする
+      const wasDrag = dragStartedRef.current
+      draggingRef.current = null
+      dragStartedRef.current = false
+      setDraggingPieceId(null)
+
+      if (!wasDrag) {
+        // タップ判定
         const now = Date.now()
         const last = lastTapRef.current
-        if (last.pieceId === draggingPieceId && now - last.time < 300) {
-          // Double tap - flip
+        if (last.pieceId === pid && now - last.time < 300) {
           if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
           tapTimeoutRef.current = null
-          dispatch({ type: 'flip', pieceId: draggingPieceId, timestamp: now })
+          dispatch({ type: 'flip', pieceId: pid, timestamp: now })
           soundEngine.playFlip()
           lastTapRef.current = { pieceId: '', time: 0 }
         } else {
-          // Single tap - rotate (with delay for double-tap detection)
-          lastTapRef.current = { pieceId: draggingPieceId, time: now }
-          const pid = draggingPieceId
+          lastTapRef.current = { pieceId: pid, time: now }
           tapTimeoutRef.current = setTimeout(() => {
             dispatch({ type: 'rotate', pieceId: pid, timestamp: Date.now() })
             soundEngine.playRotate()
@@ -248,15 +255,14 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           }, 300)
         }
       } else {
-        // Drag end - try snap
-        const ps = state.pieces.find(p => p.pieceId === draggingPieceId)!
-        const piece = puzzle.pieces.find(p => p.id === draggingPieceId)!
+        // ドラッグ終了 — スナップ判定
+        const ps = state.pieces.find(p => p.pieceId === pid)!
+        const piece = puzzle.pieces.find(p => p.id === pid)!
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
 
-        // Get occupied cells from OTHER pieces on the board
         const occupied: Cell[] = []
         for (const other of state.pieces) {
-          if (other.pieceId === draggingPieceId) continue
+          if (other.pieceId === pid) continue
           if (other.onBoard && other.gridPosition) {
             const otherPiece = puzzle.pieces.find(p => p.id === other.pieceId)!
             const otherOriented = getOrientedCells(
@@ -269,50 +275,28 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           }
         }
 
-        // ピースの mesh position + ジオメトリオフセット → SVG ドロップ座標
         const svgDrop = worldToSvgDrop(
-          ps.position,
-          oriented,
-          CELL_SIZE,
-          puzzle.gridType,
-          boardOffset,
+          ps.position, oriented, CELL_SIZE, puzzle.gridType, boardOffset,
         )
 
         const snapPos = findSnapPosition(
-          oriented,
-          svgDrop,
-          puzzle.board,
-          occupied,
-          CELL_SIZE,
-          puzzle.gridType,
+          oriented, svgDrop, puzzle.board, occupied, CELL_SIZE, puzzle.gridType,
         )
 
         if (snapPos) {
-          // スナップ後のワールド座標（ジオメトリオフセット考慮済み）
           const worldPos = svgSnapToWorld(
-            oriented,
-            snapPos,
-            CELL_SIZE,
-            puzzle.gridType,
-            boardOffset,
+            oriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset,
           )
-
           dispatch({
-            type: 'snap',
-            pieceId: draggingPieceId,
-            gridPosition: snapPos,
-            worldPosition: worldPos,
+            type: 'snap', pieceId: pid,
+            gridPosition: snapPos, worldPosition: worldPos,
             timestamp: Date.now(),
           })
           soundEngine.playSnap()
         }
-        soundEngine.playClick()
       }
-
-      setDraggingPieceId(null)
-      setDragStarted(false)
     },
-    [draggingPieceId, dragStarted, state.pieces, puzzle, soundEngine, boardOffset],
+    [state.pieces, puzzle, soundEngine, boardOffset],
   )
 
   const formatTime = (ms: number) => {
