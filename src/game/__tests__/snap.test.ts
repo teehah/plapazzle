@@ -85,4 +85,34 @@ describe('findSnapPosition', () => {
     const result = findSnapPosition(orientedCells, { x: 45, y: 30 }, board, [], 30, 'square')
     expect(result).not.toBeNull()
   })
+
+  it('ピースの一部が枠外にはみ出す位置でもボード上に重心があればスナップする', () => {
+    // 横3セルのピース。ドロップ重心がボード右端 (0,2) 付近。
+    // 素朴に最近接セル(0,2)を基準にすると placed=(0,2),(0,3),(0,4) → 枠外。
+    // しかしボード内に重心があるので、有効配置 (0,0)~(0,2) にスナップすべき。
+    const orientedCells: Cell[] = [
+      { row: 0, col: 0, dir: 0 },
+      { row: 0, col: 1, dir: 0 },
+      { row: 0, col: 2, dir: 0 },
+    ]
+    // ドロップ重心を (0,2) のセル中心: (75, 15) — ボード内
+    const result = findSnapPosition(orientedCells, { x: 75, y: 15 }, board, [], 30, 'square')
+    expect(result).not.toBeNull()
+    // 有効配置は offset(0,0) → placed=(0,0),(0,1),(0,2)
+    const placed = result ? orientedCells.map(c => ({
+      row: c.row + result.row, col: c.col + result.col, dir: c.dir,
+    })) : []
+    // 全セルがボード内であること
+    const boardKeys = new Set(board.map(c => `${c.row},${c.col},${c.dir}`))
+    for (const c of placed) {
+      expect(boardKeys.has(`${c.row},${c.col},${c.dir}`)).toBe(true)
+    }
+  })
+
+  it('重心がボード外なら最近接セルが近くてもスナップしない', () => {
+    const orientedCells: Cell[] = [{ row: 0, col: 0, dir: 0 }]
+    // ボードの SVG 範囲は x:0-90, y:0-60。重心が x=100 はボード外。
+    const result = findSnapPosition(orientedCells, { x: 100, y: 15 }, board, [], 30, 'square')
+    expect(result).toBeNull()
+  })
 })

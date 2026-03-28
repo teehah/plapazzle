@@ -376,7 +376,6 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
             const color = PIECE_COLORS[ps.pieceId] ?? '#888'
             const isDragging = ps.pieceId === draggingPieceId
             const zPos = isDragging ? 5 : 0
-            const scale = isDragging ? 1.2 : 1
 
             return (
               <PieceMesh
@@ -386,7 +385,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
                 gridType={puzzle.gridType}
                 color={color}
                 position={[ps.position.x, ps.position.y, zPos]}
-                scale={scale}
+                scale={1}
                 onPointerDown={e => {
                   e.stopPropagation()
                   const nativeEvent = e.nativeEvent as PointerEvent
