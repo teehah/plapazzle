@@ -12,7 +12,7 @@ export function ClearAnimation({ onComplete }: Props) {
     <div style={{
       position: 'fixed', inset: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'radial-gradient(circle, rgba(255,200,50,0.2) 0%, rgba(0,0,0,0.9) 100%)',
+      background: 'radial-gradient(circle, rgba(255,200,50,0.3) 0%, rgba(232,224,216,0.95) 100%)',
       zIndex: 100,
     }}>
       <div style={{

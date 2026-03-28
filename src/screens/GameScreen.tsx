@@ -19,13 +19,14 @@ import { GRID_OPS } from '../core/grid-ops'
 
 const CELL_SIZE = 30
 
-const PIECE_COLORS: Record<string, string> = {
-  I: '#e74c3c', O: '#3498db', X: '#2ecc71', C: '#f39c12',
-  E: '#9b59b6', P: '#1abc9c', F: '#e67e22', V: '#34495e',
-  S: '#e91e63', J: '#00bcd4', H: '#8bc34a', G: '#ff5722',
-  L: '#ff6b6b', N: '#4ecdc4', T: '#45b7d1', U: '#96ceb4',
-  W: '#ffeaa7', Y: '#dfe6e9', Z: '#a29bfe',
-}
+// ピースごとに異なる色を割り当てる（同じ形状でも別の色）
+const PIECE_PALETTE = [
+  '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
+  '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
+  '#e91e63', '#00bcd4', '#8bc34a', '#ff5722',
+  '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4',
+  '#ffeaa7', '#a29bfe', '#fd79a8', '#636e72',
+]
 
 type Props = {
   puzzle: PuzzleDef
@@ -104,41 +105,115 @@ function computePieceWorldBbox(
   }
 }
 
+type Rect = { minX: number; maxX: number; minY: number; maxY: number }
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.maxX > b.minX && a.minX < b.maxX && a.maxY > b.minY && a.minY < b.maxY
+}
+
 /**
- * ピースがボードと重なっている場合、最短距離でボード外にはじき出した位置を返す。
- * 重なっていなければ null。
+ * ピースが障害物（ボード＋他ピース）と重なっている場合、
+ * ピース位置から放射状に複数方向を探索し、最短の空き位置にはじき出す。
+ * 重なりがなければ null。
  */
-function pushOutOfBoard(
+function pushOutOfObstacles(
   piecePos: { x: number; y: number },
   oriented: Cell[],
   cellSize: number,
   gridType: GridType,
-  boardBbox: { minX: number; maxX: number; minY: number; maxY: number },
+  obstacles: Rect[],
 ): { x: number; y: number } | null {
-  const margin = cellSize * 0.2  // 少し余裕を持たせる
-  const pBbox = computePieceWorldBbox(oriented, cellSize, gridType, piecePos)
+  const margin = cellSize * 0.3
+  const step = cellSize * 0.5
+  const maxSteps = 20
+  const numDirs = 12  // 30度刻み
 
-  // 重なっていなければそのまま
-  if (pBbox.maxX <= boardBbox.minX || pBbox.minX >= boardBbox.maxX ||
-      pBbox.maxY <= boardBbox.minY || pBbox.minY >= boardBbox.maxY) {
-    return null
+  function hasOverlap(x: number, y: number): boolean {
+    const pBbox = computePieceWorldBbox(oriented, cellSize, gridType, { x, y })
+    const padded: Rect = {
+      minX: pBbox.minX - margin, maxX: pBbox.maxX + margin,
+      minY: pBbox.minY - margin, maxY: pBbox.maxY + margin,
+    }
+    for (const obs of obstacles) {
+      if (rectsOverlap(padded, obs)) return true
+    }
+    return false
   }
 
-  // 4方向への押し出し距離を計算し、最短を選ぶ
-  const pushLeft  = boardBbox.minX - pBbox.maxX - margin
-  const pushRight = boardBbox.maxX - pBbox.minX + margin
-  const pushDown  = boardBbox.minY - pBbox.maxY - margin
-  const pushUp    = boardBbox.maxY - pBbox.minY + margin
+  // 現在位置で重なっていなければ何もしない
+  if (!hasOverlap(piecePos.x, piecePos.y)) return null
 
-  const candidates = [
-    { dx: pushLeft,  dy: 0, dist: Math.abs(pushLeft) },
-    { dx: pushRight, dy: 0, dist: Math.abs(pushRight) },
-    { dx: 0, dy: pushDown,  dist: Math.abs(pushDown) },
-    { dx: 0, dy: pushUp,    dist: Math.abs(pushUp) },
-  ]
-  candidates.sort((a, b) => a.dist - b.dist)
-  const best = candidates[0]
-  return { x: piecePos.x + best.dx, y: piecePos.y + best.dy }
+  // 複数方向に探索し、最短距離で空きが見つかる位置を返す
+  let bestPos: { x: number; y: number } | null = null
+  let bestDist = Infinity
+
+  for (let d = 0; d < numDirs; d++) {
+    const angle = (2 * Math.PI * d) / numDirs
+    const dirX = Math.cos(angle)
+    const dirY = Math.sin(angle)
+
+    for (let s = 1; s <= maxSteps; s++) {
+      const x = piecePos.x + dirX * step * s
+      const y = piecePos.y + dirY * step * s
+      if (!hasOverlap(x, y)) {
+        const dist = s * step
+        if (dist < bestDist) {
+          bestDist = dist
+          bestPos = { x, y }
+        }
+        break
+      }
+    }
+  }
+
+  return bestPos
+}
+
+/**
+ * ピースが障害物と重なっているか判定する。
+ */
+function hasObstacleOverlap(
+  piecePos: { x: number; y: number },
+  oriented: Cell[],
+  cellSize: number,
+  gridType: GridType,
+  obstacles: Rect[],
+): boolean {
+  const margin = cellSize * 0.3
+  const pBbox = computePieceWorldBbox(oriented, cellSize, gridType, piecePos)
+  const padded: Rect = {
+    minX: pBbox.minX - margin, maxX: pBbox.maxX + margin,
+    minY: pBbox.minY - margin, maxY: pBbox.maxY + margin,
+  }
+  for (const obs of obstacles) {
+    if (rectsOverlap(padded, obs)) return true
+  }
+  return false
+}
+
+/**
+ * ピースが画面外に出ていたら画面内にクランプする。
+ */
+function clampToViewport(
+  piecePos: { x: number; y: number },
+  oriented: Cell[],
+  cellSize: number,
+  gridType: GridType,
+  viewport: { width: number; height: number },
+): { x: number; y: number } | null {
+  const pBbox = computePieceWorldBbox(oriented, cellSize, gridType, piecePos)
+  const vw = viewport.width / 2
+  const vh = viewport.height / 2
+  let x = piecePos.x
+  let y = piecePos.y
+  let clamped = false
+
+  if (pBbox.minX < -vw) { x += -vw - pBbox.minX; clamped = true }
+  else if (pBbox.maxX > vw) { x += vw - pBbox.maxX; clamped = true }
+  if (pBbox.minY < -vh) { y += -vh - pBbox.minY; clamped = true }
+  else if (pBbox.maxY > vh) { y += vh - pBbox.maxY; clamped = true }
+
+  return clamped ? { x, y } : null
 }
 
 /**
@@ -182,12 +257,15 @@ function Scene({
   draggingPieceId: string | null
   setDraggingPieceId: (id: string | null) => void
 }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, viewport } = useThree()
+  const viewportRef = useRef(viewport)
+  viewportRef.current = viewport
   const raycaster = useMemo(() => new THREE.Raycaster(), [])
 
   // ドラッグ状態（全て ref — 同期的に読み書き）
   const draggingRef = useRef<string | null>(null)
   const dragStartedRef = useRef(false)
+  const wasOnBoardRef = useRef(false)  // ドラッグ開始時にボード上だったか
   const dragStartClient = useRef({ x: 0, y: 0 })
   const dragStartWorld = useRef({ x: 0, y: 0 })
   const pieceStartPos = useRef({ x: 0, y: 0 })
@@ -233,12 +311,10 @@ function Scene({
       const ps = stateRef.current.pieces.find(p => p.uid === uid)
       if (!ps) return
 
-      if (ps.onBoard) {
-        dispatch({ type: 'unsnap', uid, position: ps.position, timestamp: Date.now() })
-      }
-
+      // unsnap はドラッグ開始時まで遅延（タップ回転でボード上を維持するため）
       draggingRef.current = uid
       dragStartedRef.current = false
+      wasOnBoardRef.current = ps.onBoard
       setDraggingPieceId(uid)
       dragStartClient.current = { x: e.clientX, y: e.clientY }
       dragStartWorld.current = { x: world.x, y: world.y }
@@ -256,6 +332,14 @@ function Scene({
 
       if (!dragStartedRef.current && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
         dragStartedRef.current = true
+        // ドラッグ開始時にボード上のピースを unsnap
+        if (wasOnBoardRef.current) {
+          const ps = stateRef.current.pieces.find(p => p.uid === pid)
+          if (ps) {
+            dispatch({ type: 'unsnap', uid: pid, position: ps.position, timestamp: Date.now() })
+          }
+          wasOnBoardRef.current = false
+        }
       }
 
       if (dragStartedRef.current) {
@@ -286,16 +370,55 @@ function Scene({
         // タップ
         const now = Date.now()
         const last = lastTapRef.current
+
+        const applyRotateOrFlip = (type: 'rotate' | 'flip') => {
+          const ts = Date.now()
+          const ps = stateRef.current.pieces.find(p => p.uid === pid)!
+          const piece = puzzle.pieces[ps.pieceIndex]
+          const gridPos = ps.gridPosition
+
+          // 新しい orientation/flip を事前計算（dispatch 前）
+          const newOrientIdx = type === 'rotate' ? ps.orientationIndex + 1 : ps.orientationIndex
+          const newFlipped = type === 'flip' ? !ps.flipped : ps.flipped
+
+          dispatch({ type, uid: pid, timestamp: ts })
+
+          // ボード上だった場合、新しい向きで最寄りの有効位置に再スナップ
+          if (wasOnBoardRef.current) {
+            const newOriented = getOrientedCells(piece, newOrientIdx, newFlipped, puzzle.gridType)
+
+            const occupied: Cell[] = []
+            for (const other of stateRef.current.pieces) {
+              if (other.uid === pid) continue
+              if (other.onBoard && other.gridPosition) {
+                const otherPiece = puzzle.pieces[other.pieceIndex]
+                const otherOriented = getOrientedCells(otherPiece, other.orientationIndex, other.flipped, puzzle.gridType)
+                occupied.push(...getPlacedCells(otherOriented, other.gridPosition))
+              }
+            }
+
+            // 現在のワールド位置から SVG ドロップ座標を計算
+            const svgDrop = worldToSvgDrop(ps.position, newOriented, CELL_SIZE, puzzle.gridType, boardOffset)
+            const snapPos = findSnapPosition(newOriented, svgDrop, puzzle.board, occupied, CELL_SIZE, puzzle.gridType)
+
+            if (snapPos) {
+              const worldPos = svgSnapToWorld(newOriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset)
+              dispatch({ type: 'snap', uid: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: ts })
+            }
+          }
+          wasOnBoardRef.current = false
+        }
+
         if (last.uid === pid && now - last.time < 300) {
           if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
           tapTimeoutRef.current = null
-          dispatch({ type: 'flip', uid: pid, timestamp: now })
+          applyRotateOrFlip('flip')
           soundEngine.playFlip()
           lastTapRef.current = { uid: '', time: 0 }
         } else {
           lastTapRef.current = { uid: pid, time: now }
           tapTimeoutRef.current = setTimeout(() => {
-            dispatch({ type: 'rotate', uid: pid, timestamp: Date.now() })
+            applyRotateOrFlip('rotate')
             soundEngine.playRotate()
             tapTimeoutRef.current = null
           }, 300)
@@ -324,11 +447,48 @@ function Scene({
           dispatch({ type: 'snap', uid: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: Date.now() })
           soundEngine.playSnap()
         } else {
-          // スナップしなかった場合、ピースがボードに重なっていたらはじき出す
-          const pushed = pushOutOfBoard(ps.position, oriented, CELL_SIZE, puzzle.gridType, boardBbox)
-          if (pushed) {
-            dispatch({ type: 'move', uid: pid, position: pushed, timestamp: Date.now() })
+          // スナップしなかった場合、ボード・他ピースと重なっていたらはじき出す
+          const obstacles: Rect[] = [boardBbox]
+          for (const other of currentState.pieces) {
+            if (other.uid === pid || other.onBoard) continue
+            const otherPiece = puzzle.pieces[other.pieceIndex]
+            const otherOriented = getOrientedCells(otherPiece, other.orientationIndex, other.flipped, puzzle.gridType)
+            obstacles.push(computePieceWorldBbox(otherOriented, CELL_SIZE, puzzle.gridType, other.position))
           }
+          let finalPos = ps.position
+          // 優先度: 1.枠侵入禁止 2.他ピース重なり禁止 3.画面内（1,2に反するなら画面外可）
+          const pushed = pushOutOfObstacles(finalPos, oriented, CELL_SIZE, puzzle.gridType, obstacles)
+          if (pushed) finalPos = pushed
+
+          const clamped = clampToViewport(finalPos, oriented, CELL_SIZE, puzzle.gridType, viewportRef.current)
+          if (clamped && !hasObstacleOverlap(clamped, oriented, CELL_SIZE, puzzle.gridType, obstacles)) {
+            finalPos = clamped
+          }
+
+          if (finalPos !== ps.position) {
+            dispatch({ type: 'move', uid: pid, position: finalPos, timestamp: Date.now() })
+          }
+        }
+      }
+
+      // 他のピースが画面外にいたら画面内に押し戻す（障害物と重ならない場合のみ）
+      const latestState = stateRef.current
+      for (const other of latestState.pieces) {
+        if (other.uid === pid || other.onBoard) continue
+        const otherPiece = puzzle.pieces[other.pieceIndex]
+        const otherOriented = getOrientedCells(otherPiece, other.orientationIndex, other.flipped, puzzle.gridType)
+        const clamped = clampToViewport(other.position, otherOriented, CELL_SIZE, puzzle.gridType, viewportRef.current)
+        if (!clamped) continue
+        // クランプ先が枠・他ピースと重ならないか確認
+        const clampObstacles: Rect[] = [boardBbox]
+        for (const p2 of latestState.pieces) {
+          if (p2.uid === other.uid || p2.onBoard) continue
+          const p2piece = puzzle.pieces[p2.pieceIndex]
+          const p2oriented = getOrientedCells(p2piece, p2.orientationIndex, p2.flipped, puzzle.gridType)
+          clampObstacles.push(computePieceWorldBbox(p2oriented, CELL_SIZE, puzzle.gridType, p2.position))
+        }
+        if (!hasObstacleOverlap(clamped, otherOriented, CELL_SIZE, puzzle.gridType, clampObstacles)) {
+          dispatch({ type: 'move', uid: other.uid, position: clamped, timestamp: Date.now() })
         }
       }
     }
@@ -351,7 +511,7 @@ function Scene({
       {state.pieces.map(ps => {
         const piece = puzzle.pieces[ps.pieceIndex]
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
-        const color = PIECE_COLORS[ps.pieceId] ?? '#888'
+        const color = PIECE_PALETTE[ps.pieceIndex % PIECE_PALETTE.length]
         const isDragging = ps.uid === draggingPieceId
         const zPos = isDragging ? 5 : 0
 
@@ -385,7 +545,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   const [elapsed, setElapsed] = useState(0)
   const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null)
   const isMobile = 'ontouchstart' in window
-  const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches
+  const darkMode = false // TODO: window.matchMedia('(prefers-color-scheme: dark)').matches
 
   const boardOffset = useMemo(
     () => computeBoardOffset(puzzle.board, CELL_SIZE, puzzle.gridType),
@@ -450,9 +610,9 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
         style={{
           position: 'absolute', top: 12, right: 16, zIndex: 10,
           padding: '4px 12px', borderRadius: 12,
-          background: soundEnabled ? 'rgba(100,200,255,0.15)' : 'rgba(255,255,255,0.05)',
-          border: `1px solid ${soundEnabled ? 'rgba(100,200,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
-          color: soundEnabled ? 'rgba(100,200,255,0.8)' : 'rgba(255,255,255,0.3)',
+          background: soundEnabled ? 'rgba(52,73,94,0.1)' : 'rgba(0,0,0,0.03)',
+          border: `1px solid ${soundEnabled ? 'rgba(52,73,94,0.25)' : 'rgba(0,0,0,0.1)'}`,
+          color: soundEnabled ? 'rgba(52,73,94,0.7)' : 'rgba(0,0,0,0.25)',
           fontSize: 12, cursor: 'pointer', userSelect: 'none',
         }}
       >
