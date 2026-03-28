@@ -1,12 +1,16 @@
 import { useState, useCallback } from 'react'
 import { Board } from './ui/Board'
 import { Controls } from './ui/Controls'
-import type { Solution, WorkerResult } from './core/solver'
+import { PUZZLES } from './data/puzzles'
+import type { Solution, WorkerResult, WorkerInput } from './core/solver'
 
 export default function App() {
+  const [puzzleIndex, setPuzzleIndex] = useState(0)
   const [solutions, setSolutions] = useState<Solution[]>([])
   const [index, setIndex] = useState(0)
   const [status, setStatus] = useState<'idle' | 'solving' | 'done'>('idle')
+
+  const puzzle = PUZZLES[puzzleIndex]
 
   const handleSolve = useCallback(() => {
     setStatus('solving')
@@ -16,6 +20,7 @@ export default function App() {
       new URL('./worker/solver.worker.ts', import.meta.url),
       { type: 'module' }
     )
+    worker.postMessage({ board: puzzle.board, pieces: puzzle.pieces } satisfies WorkerInput)
     worker.onmessage = (e: MessageEvent<WorkerResult>) => {
       const sols: Solution[] = e.data.solutions.map(entries => new Map(entries))
       setSolutions(sols)
@@ -27,14 +32,30 @@ export default function App() {
       setStatus('done')
       worker.terminate()
     }
+  }, [puzzle])
+
+  const handlePuzzleChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setPuzzleIndex(Number(e.target.value))
+    setSolutions([])
+    setIndex(0)
+    setStatus('idle')
   }, [])
 
   const currentSolution = solutions[index] ?? null
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: 24 }}>
-      <h1 style={{ textAlign: 'center' }}>プラパズル No.6 ソルバ</h1>
-      <Board solution={currentSolution} />
+      <h1 style={{ textAlign: 'center' }}>{puzzle.name} ソルバ</h1>
+      {PUZZLES.length > 1 && (
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <select value={puzzleIndex} onChange={handlePuzzleChange}>
+            {PUZZLES.map((p, i) => (
+              <option key={p.id} value={i}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <Board cells={puzzle.board} solution={currentSolution} />
       <Controls
         status={status}
         total={solutions.length}

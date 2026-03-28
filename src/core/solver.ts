@@ -6,7 +6,13 @@ import { solveExactCover } from './dlx'
 
 export type Solution = Map<string, string>  // cellKey -> pieceId
 
-/** WebWorkerのメッセージ型（App.tsx と共有） */
+/** WebWorkerへの入力メッセージ型 */
+export type WorkerInput = {
+  board: Cell[]
+  pieces: PieceDef[]
+}
+
+/** WebWorkerからの出力メッセージ型 */
 export type WorkerResult = {
   solutions: Array<[string, string][]>  // Solution(Map)をシリアライズしたもの
 }

@@ -1,6 +1,6 @@
 import type { Solution } from '../core/solver'
+import type { Cell } from '../core/grid'
 import { cellKey, cellToSvgPoints } from '../core/grid'
-import { NO6_BOARD } from '../data/no6'
 
 const H = 30  // triangle height in px
 
@@ -14,10 +14,9 @@ function pointsStr(pts: [[number,number],[number,number],[number,number]]): stri
   return pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
 }
 
-type Props = { solution: Solution | null }
+type Props = { cells: Cell[]; solution: Solution | null }
 
-export function Board({ solution }: Props) {
-  const cells = NO6_BOARD.cells
+export function Board({ cells, solution }: Props) {
 
   let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0
   for (const cell of cells) {
