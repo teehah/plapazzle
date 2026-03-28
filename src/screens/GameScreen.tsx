@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PuzzleDef } from '../core/puzzle'
@@ -35,17 +35,12 @@ type Props = {
   onClear: (state: GameState, clearTimeMs: number) => void
 }
 
-/**
- * Compute board bounding box center in Three.js coords.
- * Mirrors the centering logic in BoardMesh for consistent alignment.
- */
 function computeBoardOffset(board: Cell[], cellSize: number, gridType: GridType): { x: number; y: number } {
   const ops = GRID_OPS[gridType]
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   for (const cell of board) {
     const pts = ops.cellToSvgPoints(cell, cellSize)
     for (const [px, py] of pts) {
-      // Three.js coords: x = svg_x, y = -svg_y
       const tx = px
       const ty = -py
       if (tx < minX) minX = tx
@@ -54,217 +49,152 @@ function computeBoardOffset(board: Cell[], cellSize: number, gridType: GridType)
       if (ty > maxY) maxY = ty
     }
   }
-  return {
-    x: (minX + maxX) / 2,
-    y: (minY + maxY) / 2,
-  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
 }
 
 /**
- * Inner scene component that has access to Three.js camera/gl context.
- * Handles pointer events on the canvas for drag interactions.
- */
-/**
- * 画面座標 → Three.js ワールド座標変換（OrthographicCamera用）
+ * 画面座標 → Three.js ワールド座標（OrthographicCamera）
  */
 function screenToWorld(
   clientX: number, clientY: number,
-  camera: THREE.Camera, canvas: HTMLCanvasElement,
+  camera: THREE.Camera, domElement: HTMLElement,
 ): { x: number; y: number } {
-  const rect = canvas.getBoundingClientRect()
+  const rect = domElement.getBoundingClientRect()
   const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
   const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
   const vec = new THREE.Vector3(ndcX, ndcY, 0).unproject(camera)
   return { x: vec.x, y: vec.y }
 }
 
-function SceneContent({
-  children,
-  onPointerDownWorld,
-  onPointerMoveWorld,
-  onPointerUpWorld,
+/**
+ * 全イベントを canvas DOM リスナーで処理する内部コンポーネント。
+ * Raycaster でピースの hit 判定を行う。
+ */
+function Scene({
+  puzzle,
+  state,
+  dispatch,
+  boardOffset,
+  soundEngine,
+  isMobile,
+  darkMode,
+  draggingPieceId,
+  setDraggingPieceId,
+  onClear,
 }: {
-  children: React.ReactNode
-  onPointerDownWorld: (worldX: number, worldY: number, clientX: number, clientY: number) => void
-  onPointerMoveWorld: (worldX: number, worldY: number, clientX: number, clientY: number) => void
-  onPointerUpWorld: () => void
+  puzzle: PuzzleDef
+  state: GameState
+  dispatch: React.Dispatch<any>
+  boardOffset: { x: number; y: number }
+  soundEngine: SoundEngine
+  isMobile: boolean
+  darkMode: boolean
+  draggingPieceId: string | null
+  setDraggingPieceId: (id: string | null) => void
+  onClear: (state: GameState, clearTimeMs: number) => void
 }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, scene } = useThree()
+  const raycaster = useMemo(() => new THREE.Raycaster(), [])
+
+  // ドラッグ状態（全て ref — 同期的に読み書き）
+  const draggingRef = useRef<string | null>(null)
+  const dragStartedRef = useRef(false)
+  const dragStartClient = useRef({ x: 0, y: 0 })
+  const dragStartWorld = useRef({ x: 0, y: 0 })
+  const pieceStartPos = useRef({ x: 0, y: 0 })
+  const lastTapRef = useRef({ pieceId: '', time: 0 })
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ピース mesh の参照を pieceId → mesh で保持
+  const pieceMeshMap = useRef<Map<string, THREE.Object3D>>(new Map())
+
+  // state を ref に保持（イベントハンドラから最新を読むため）
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  // Raycast でクリック位置のピースを特定
+  function findPieceAtScreen(clientX: number, clientY: number): string | null {
+    const rect = gl.domElement.getBoundingClientRect()
+    const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
+    const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
+
+    // ピースメッシュだけを対象に raycast
+    const pieceMeshes = Array.from(pieceMeshMap.current.values())
+    const intersects = raycaster.intersectObjects(pieceMeshes, true)
+    if (intersects.length === 0) return null
+
+    // 最初の交差オブジェクトの親を辿って pieceId を取得
+    let obj: THREE.Object3D | null = intersects[0].object
+    while (obj) {
+      if (obj.userData.pieceId) return obj.userData.pieceId as string
+      obj = obj.parent
+    }
+    return null
+  }
 
   useEffect(() => {
     const canvas = gl.domElement
 
-    const handleDown = (e: PointerEvent) => {
-      const w = screenToWorld(e.clientX, e.clientY, camera, canvas)
-      onPointerDownWorld(w.x, w.y, e.clientX, e.clientY)
-    }
-
-    const handleMove = (e: PointerEvent) => {
-      const w = screenToWorld(e.clientX, e.clientY, camera, canvas)
-      onPointerMoveWorld(w.x, w.y, e.clientX, e.clientY)
-    }
-
-    const handleUp = () => {
-      onPointerUpWorld()
-    }
-
-    canvas.addEventListener('pointerdown', handleDown)
-    canvas.addEventListener('pointermove', handleMove)
-    canvas.addEventListener('pointerup', handleUp)
-    return () => {
-      canvas.removeEventListener('pointerdown', handleDown)
-      canvas.removeEventListener('pointermove', handleMove)
-      canvas.removeEventListener('pointerup', handleUp)
-    }
-  }, [camera, gl, onPointerDownWorld, onPointerMoveWorld, onPointerUpWorld])
-
-  return <>{children}</>
-}
-
-export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, onClear }: Props) {
-  const [state, dispatch] = useReducer(gameReducer, puzzle, initGameState)
-  const [elapsed, setElapsed] = useState(0)
-  // ドラッグ状態は ref で同期管理（イベントハンドラ用）
-  // state はレンダリング用（z-index 表示切替）
-  const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null)
-  const draggingRef = useRef<string | null>(null)
-  const dragStartedRef = useRef(false)
-  const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  const dragWorldStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  const pieceStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  const lastTapRef = useRef<{ pieceId: string; time: number }>({ pieceId: '', time: 0 })
-  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isMobile = 'ontouchstart' in window
-  const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches
-
-  // Board offset: used to align piece positions with the centered board
-  const boardOffset = useMemo(
-    () => computeBoardOffset(puzzle.board, CELL_SIZE, puzzle.gridType),
-    [puzzle],
-  )
-
-  // Start timer on mount
-  useEffect(() => {
-    if (!state.startedAt) {
-      dispatch({ type: 'start', timestamp: Date.now() })
-    }
-  }, [state.startedAt])
-
-  // Update elapsed time
-  useEffect(() => {
-    if (!state.startedAt) return
-    const interval = setInterval(() => setElapsed(Date.now() - state.startedAt!), 100)
-    return () => clearInterval(interval)
-  }, [state.startedAt])
-
-  // Check for clear
-  useEffect(() => {
-    const allCovered: Cell[] = []
-    for (const ps of state.pieces) {
-      if (ps.onBoard && ps.gridPosition) {
-        const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
-        const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
-        const placed = getPlacedCells(oriented, ps.gridPosition)
-        allCovered.push(...placed)
-      }
-    }
-    if (checkCleared(puzzle.board, allCovered) && state.startedAt) {
-      const clearTime = Date.now() - state.startedAt
-      soundEngine.playFanfare()
-      onClear(state, clearTime)
-    }
-  }, [state.pieces, puzzle, state.startedAt, soundEngine, onClear])
-
-  // Cleanup tap timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
-    }
-  }, [])
-
-  // PieceMesh の onPointerDown で pieceId を記録（R3F の raycast で hit 判定）
-  const pendingPieceRef = useRef<string | null>(null)
-
-  const handlePiecePointerDown = useCallback((pieceId: string) => {
-    pendingPieceRef.current = pieceId
-  }, [])
-
-  // SceneContent の pointerdown で全座標変換を統一的に処理
-  const handlePointerDownWorld = useCallback(
-    (worldX: number, worldY: number, clientX: number, clientY: number) => {
-      const pieceId = pendingPieceRef.current
-      pendingPieceRef.current = null
+    function handleDown(e: PointerEvent) {
+      const world = screenToWorld(e.clientX, e.clientY, camera, canvas)
+      const pieceId = findPieceAtScreen(e.clientX, e.clientY)
       if (!pieceId) return
 
-      const ps = state.pieces.find(p => p.pieceId === pieceId)
+      const ps = stateRef.current.pieces.find(p => p.pieceId === pieceId)
       if (!ps) return
 
       if (ps.onBoard) {
-        dispatch({
-          type: 'unsnap',
-          pieceId,
-          position: ps.position,
-          timestamp: Date.now(),
-        })
+        dispatch({ type: 'unsnap', pieceId, position: ps.position, timestamp: Date.now() })
       }
+
       draggingRef.current = pieceId
       dragStartedRef.current = false
       setDraggingPieceId(pieceId)
-      dragStartPos.current = { x: clientX, y: clientY }
-      dragWorldStart.current = { x: worldX, y: worldY }
+      dragStartClient.current = { x: e.clientX, y: e.clientY }
+      dragStartWorld.current = { x: world.x, y: world.y }
       pieceStartPos.current = { x: ps.position.x, y: ps.position.y }
-    },
-    [state.pieces],
-  )
 
-  const handlePointerMoveWorld = useCallback(
-    (worldX: number, worldY: number, clientX: number, clientY: number) => {
+      e.preventDefault()
+    }
+
+    function handleMove(e: PointerEvent) {
       const pid = draggingRef.current
       if (!pid) return
 
-      const dx = clientX - dragStartPos.current.x
-      const dy = clientY - dragStartPos.current.y
-      const movedEnough = Math.abs(dx) > 5 || Math.abs(dy) > 5
+      const dx = e.clientX - dragStartClient.current.x
+      const dy = e.clientY - dragStartClient.current.y
 
-      if (!dragStartedRef.current && movedEnough) {
+      if (!dragStartedRef.current && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
         dragStartedRef.current = true
       }
 
       if (dragStartedRef.current) {
-        const worldDx = worldX - dragWorldStart.current.x
-        const worldDy = worldY - dragWorldStart.current.y
+        const world = screenToWorld(e.clientX, e.clientY, camera, canvas)
+        const worldDx = world.x - dragStartWorld.current.x
+        const worldDy = world.y - dragStartWorld.current.y
 
         let newX = pieceStartPos.current.x + worldDx
         let newY = pieceStartPos.current.y + worldDy
+        if (isMobile) newY += 20
 
-        if (isMobile) {
-          newY += 20
-        }
-
-        dispatch({
-          type: 'move',
-          pieceId: pid,
-          position: { x: newX, y: newY },
-          timestamp: Date.now(),
-        })
+        dispatch({ type: 'move', pieceId: pid, position: { x: newX, y: newY }, timestamp: Date.now() })
       }
-    },
-    [isMobile],
-  )
+    }
 
-  const handlePointerUpWorld = useCallback(
-    () => {
+    function handleUp(_e: PointerEvent) {
       const pid = draggingRef.current
       if (!pid) return
 
-      // 同期的にクリア — 後続の pointermove が move を dispatch しないようにする
       const wasDrag = dragStartedRef.current
       draggingRef.current = null
       dragStartedRef.current = false
       setDraggingPieceId(null)
 
+      const currentState = stateRef.current
+
       if (!wasDrag) {
-        // タップ判定
+        // タップ
         const now = Date.now()
         const last = lastTapRef.current
         if (last.pieceId === pid && now - last.time < 300) {
@@ -282,49 +212,119 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           }, 300)
         }
       } else {
-        // ドラッグ終了 — スナップ判定
-        const ps = state.pieces.find(p => p.pieceId === pid)!
+        // ドラッグ終了 → スナップ判定
+        const ps = currentState.pieces.find(p => p.pieceId === pid)!
         const piece = puzzle.pieces.find(p => p.id === pid)!
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
 
         const occupied: Cell[] = []
-        for (const other of state.pieces) {
+        for (const other of currentState.pieces) {
           if (other.pieceId === pid) continue
           if (other.onBoard && other.gridPosition) {
             const otherPiece = puzzle.pieces.find(p => p.id === other.pieceId)!
-            const otherOriented = getOrientedCells(
-              otherPiece,
-              other.orientationIndex,
-              other.flipped,
-              puzzle.gridType,
-            )
+            const otherOriented = getOrientedCells(otherPiece, other.orientationIndex, other.flipped, puzzle.gridType)
             occupied.push(...getPlacedCells(otherOriented, other.gridPosition))
           }
         }
 
-        const svgDrop = worldToSvgDrop(
-          ps.position, oriented, CELL_SIZE, puzzle.gridType, boardOffset,
-        )
-
-        const snapPos = findSnapPosition(
-          oriented, svgDrop, puzzle.board, occupied, CELL_SIZE, puzzle.gridType,
-        )
+        const svgDrop = worldToSvgDrop(ps.position, oriented, CELL_SIZE, puzzle.gridType, boardOffset)
+        const snapPos = findSnapPosition(oriented, svgDrop, puzzle.board, occupied, CELL_SIZE, puzzle.gridType)
 
         if (snapPos) {
-          const worldPos = svgSnapToWorld(
-            oriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset,
-          )
-          dispatch({
-            type: 'snap', pieceId: pid,
-            gridPosition: snapPos, worldPosition: worldPos,
-            timestamp: Date.now(),
-          })
+          const worldPos = svgSnapToWorld(oriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset)
+          dispatch({ type: 'snap', pieceId: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: Date.now() })
           soundEngine.playSnap()
         }
       }
-    },
-    [state.pieces, puzzle, soundEngine, boardOffset],
+    }
+
+    canvas.addEventListener('pointerdown', handleDown)
+    canvas.addEventListener('pointermove', handleMove)
+    canvas.addEventListener('pointerup', handleUp)
+    return () => {
+      canvas.removeEventListener('pointerdown', handleDown)
+      canvas.removeEventListener('pointermove', handleMove)
+      canvas.removeEventListener('pointerup', handleUp)
+      if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
+    }
+  }, [camera, gl, dispatch, puzzle, boardOffset, soundEngine, isMobile, setDraggingPieceId])
+
+  return (
+    <>
+      <Lighting darkMode={darkMode} />
+      <BoardMesh cells={puzzle.board} cellSize={CELL_SIZE} gridType={puzzle.gridType} />
+      {state.pieces.map(ps => {
+        const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
+        const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
+        const color = PIECE_COLORS[ps.pieceId] ?? '#888'
+        const isDragging = ps.pieceId === draggingPieceId
+        const zPos = isDragging ? 5 : 0
+
+        return (
+          <group
+            key={ps.pieceId}
+            userData={{ pieceId: ps.pieceId }}
+            ref={(ref) => {
+              if (ref) pieceMeshMap.current.set(ps.pieceId, ref)
+              else pieceMeshMap.current.delete(ps.pieceId)
+            }}
+          >
+            <PieceMesh
+              cells={oriented}
+              cellSize={CELL_SIZE}
+              gridType={puzzle.gridType}
+              color={color}
+              position={[ps.position.x, ps.position.y, zPos]}
+              scale={1}
+            />
+          </group>
+        )
+      })}
+    </>
   )
+}
+
+export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, onClear }: Props) {
+  const [state, dispatch] = useReducer(gameReducer, puzzle, initGameState)
+  const [elapsed, setElapsed] = useState(0)
+  const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null)
+  const isMobile = 'ontouchstart' in window
+  const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches
+
+  const boardOffset = useMemo(
+    () => computeBoardOffset(puzzle.board, CELL_SIZE, puzzle.gridType),
+    [puzzle],
+  )
+
+  useEffect(() => {
+    if (!state.startedAt) {
+      dispatch({ type: 'start', timestamp: Date.now() })
+    }
+  }, [state.startedAt])
+
+  useEffect(() => {
+    if (!state.startedAt) return
+    const interval = setInterval(() => setElapsed(Date.now() - state.startedAt!), 100)
+    return () => clearInterval(interval)
+  }, [state.startedAt])
+
+  // クリア判定
+  useEffect(() => {
+    const allCovered: Cell[] = []
+    for (const ps of state.pieces) {
+      if (ps.onBoard && ps.gridPosition) {
+        const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
+        const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
+        const placed = getPlacedCells(oriented, ps.gridPosition)
+        allCovered.push(...placed)
+      }
+    }
+    if (checkCleared(puzzle.board, allCovered) && state.startedAt) {
+      const clearTime = Date.now() - state.startedAt
+      soundEngine.playFanfare()
+      onClear(state, clearTime)
+    }
+  }, [state.pieces, puzzle, state.startedAt, soundEngine, onClear])
 
   const formatTime = (ms: number) => {
     const s = Math.floor(ms / 1000)
@@ -332,26 +332,16 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   }
 
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100dvh',
-        position: 'relative',
-        background: darkMode ? '#0a0a1a' : '#e8e0d8',
-        touchAction: 'none',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 12,
-          left: 16,
-          zIndex: 10,
-          color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-          fontSize: 16,
-          fontFamily: 'monospace',
-        }}
-      >
+    <div style={{
+      width: '100vw', height: '100dvh', position: 'relative',
+      background: darkMode ? '#0a0a1a' : '#e8e0d8',
+      touchAction: 'none',
+    }}>
+      <div style={{
+        position: 'absolute', top: 12, left: 16, zIndex: 10,
+        color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+        fontSize: 16, fontFamily: 'monospace',
+      }}>
         {formatTime(elapsed)}
       </div>
       <div
@@ -369,42 +359,18 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
       </div>
       <Canvas style={{ width: '100%', height: '100%', touchAction: 'none' }}>
         <OrthographicCamera makeDefault position={[0, 0, 50]} zoom={2} />
-        <Lighting darkMode={darkMode} />
-        <SceneContent
-          onPointerDownWorld={handlePointerDownWorld}
-          onPointerMoveWorld={handlePointerMoveWorld}
-          onPointerUpWorld={handlePointerUpWorld}
-        >
-          <BoardMesh cells={puzzle.board} cellSize={CELL_SIZE} gridType={puzzle.gridType} />
-          {state.pieces.map(ps => {
-            const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
-            const oriented = getOrientedCells(
-              piece,
-              ps.orientationIndex,
-              ps.flipped,
-              puzzle.gridType,
-            )
-            const color = PIECE_COLORS[ps.pieceId] ?? '#888'
-            const isDragging = ps.pieceId === draggingPieceId
-            const zPos = isDragging ? 5 : 0
-
-            return (
-              <PieceMesh
-                key={ps.pieceId}
-                cells={oriented}
-                cellSize={CELL_SIZE}
-                gridType={puzzle.gridType}
-                color={color}
-                position={[ps.position.x, ps.position.y, zPos]}
-                scale={1}
-                onPointerDown={e => {
-                  e.stopPropagation()
-                  handlePiecePointerDown(ps.pieceId)
-                }}
-              />
-            )
-          })}
-        </SceneContent>
+        <Scene
+          puzzle={puzzle}
+          state={state}
+          dispatch={dispatch}
+          boardOffset={boardOffset}
+          soundEngine={soundEngine}
+          isMobile={isMobile}
+          darkMode={darkMode}
+          draggingPieceId={draggingPieceId}
+          setDraggingPieceId={setDraggingPieceId}
+          onClear={onClear}
+        />
       </Canvas>
     </div>
   )

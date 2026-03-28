@@ -1,4 +1,3 @@
-import type { ThreeEvent } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { Cell } from '../core/grid'
@@ -12,21 +11,10 @@ type Props = {
   color: string
   position: [number, number, number]
   scale?: number
-  onPointerDown?: (e: ThreeEvent<PointerEvent>) => void
-  onPointerMove?: (e: ThreeEvent<PointerEvent>) => void
-  onPointerUp?: (e: ThreeEvent<PointerEvent>) => void
 }
 
 export function PieceMesh({
-  cells,
-  cellSize,
-  gridType,
-  color,
-  position,
-  scale = 1,
-  onPointerDown,
-  onPointerMove,
-  onPointerUp,
+  cells, cellSize, gridType, color, position, scale = 1,
 }: Props) {
   const meshRef = useRef<THREE.Mesh>(null)
   const geometry = useMemo(
@@ -40,9 +28,6 @@ export function PieceMesh({
       geometry={geometry}
       position={position}
       scale={[scale, scale, scale]}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
     >
       <meshPhysicalMaterial
         transmission={0.7}
