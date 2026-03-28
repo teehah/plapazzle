@@ -119,12 +119,10 @@ function Scene({
     const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
 
-    // ピースメッシュだけを対象に raycast
     const pieceMeshes = Array.from(pieceMeshMap.current.values())
     const intersects = raycaster.intersectObjects(pieceMeshes, true)
     if (intersects.length === 0) return null
 
-    // 最初の交差オブジェクトの親を辿って pieceId を取得
     let obj: THREE.Object3D | null = intersects[0].object
     while (obj) {
       if (obj.userData.pieceId) return obj.userData.pieceId as string
