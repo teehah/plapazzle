@@ -19,22 +19,26 @@ type Props = { solution: Solution | null }
 export function Board({ solution }: Props) {
   const cells = NO6_BOARD.cells
 
-  let maxX = 0, maxY = 0
+  let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0
   for (const cell of cells) {
     const pts = cellToSvgPoints(cell, H)
     for (const [x, y] of pts) {
+      if (x < minX) minX = x
+      if (y < minY) minY = y
       if (x > maxX) maxX = x
       if (y > maxY) maxY = y
     }
   }
+  const width = maxX - minX
+  const height = maxY - minY
 
   return (
     <svg
-      width={maxX + 4}
-      height={maxY + 4}
+      width={width + 4}
+      height={height + 4}
       style={{ display: 'block', margin: '0 auto' }}
     >
-      <g transform="translate(2,2)">
+      <g transform={`translate(${2 - minX},${2 - minY})`}>
         {cells.map(cell => {
           const key = cellKey(cell)
           const pts = cellToSvgPoints(cell, H)
