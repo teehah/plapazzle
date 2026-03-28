@@ -164,7 +164,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   }, [])
 
   const handlePointerDown = useCallback(
-    (pieceId: string, clientX: number, clientY: number) => {
+    (pieceId: string, clientX: number, clientY: number, worldX: number, worldY: number) => {
       // If piece is on board, unsnap it first
       const ps = state.pieces.find(p => p.pieceId === pieceId)
       if (ps && ps.onBoard) {
@@ -178,6 +178,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
       setDraggingPieceId(pieceId)
       setDragStarted(false)
       dragStartPos.current = { x: clientX, y: clientY }
+      dragWorldStart.current = { x: worldX, y: worldY }
       if (ps) {
         pieceStartPos.current = { x: ps.position.x, y: ps.position.y }
       }
@@ -195,8 +196,6 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
 
       if (!dragStarted && movedEnough) {
         setDragStarted(true)
-        // Record the world position at drag start for delta calculation
-        dragWorldStart.current = { x: worldX, y: worldY }
       }
 
       if (dragStarted || movedEnough) {
@@ -389,7 +388,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
                 onPointerDown={e => {
                   e.stopPropagation()
                   const nativeEvent = e.nativeEvent as PointerEvent
-                  handlePointerDown(ps.pieceId, nativeEvent.clientX, nativeEvent.clientY)
+                  handlePointerDown(ps.pieceId, nativeEvent.clientX, nativeEvent.clientY, e.point.x, e.point.y)
                 }}
               />
             )
