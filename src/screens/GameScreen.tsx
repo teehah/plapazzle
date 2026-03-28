@@ -375,7 +375,6 @@ function Scene({
           const ts = Date.now()
           const ps = stateRef.current.pieces.find(p => p.uid === pid)!
           const piece = puzzle.pieces[ps.pieceIndex]
-          const gridPos = ps.gridPosition
 
           // 新しい orientation/flip を事前計算（dispatch 前）
           const newOrientIdx = type === 'rotate' ? ps.orientationIndex + 1 : ps.orientationIndex

@@ -63,14 +63,7 @@ describe('snap alignment (bbox center)', () => {
       // svgSnapToWorld で得たワールド座標
       const worldPos = svgSnapToWorld(cells, gridPos, CELL_SIZE, 'square', boardGeoCenter)
 
-      // 配置されたセルのジオメトリ center（cellsToGeometry と同じ方法）
-      const placedGeoCenter = geometryCenter(placed, CELL_SIZE)
-
       // ピースのワールド座標 + ボードオフセット = ジオメトリセンター（SVG→world変換を逆算）
-      // worldPos = geoCenter - boardGeoCenter (x), geoCenter - boardGeoCenter (y は既に-svgY)
-      // なので worldPos.x + boardGeoCenter.x === placedGeoCenter.x
-      //        worldPos.y + boardGeoCenter.y === placedGeoCenter.y (ここは geometry Y 座標系)
-      // ただし boardGeoCenter は geometry Y (-svgY) で計算、svgBboxCenter は svgY で計算
 
       // 直接比較: ピースの mesh.position にジオメトリを置いた時の bbox center が
       // ボードの対応セルの bbox center と一致するか

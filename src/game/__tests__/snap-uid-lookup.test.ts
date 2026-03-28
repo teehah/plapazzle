@@ -101,7 +101,6 @@ describe('snap uid lookup (テトロミノ)', () => {
 
   it('重複 id のピース（I_0 と I_5）が別々にスナップできる', () => {
     const state = initGameState(puzzle)
-    const boardOffset = computeBoardOffset(puzzle.board, CELL_SIZE, puzzle.gridType)
 
     // I ピース2つを取得
     const iPieces = state.pieces.filter(p => p.pieceId === 'I')

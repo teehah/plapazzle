@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Cell } from '../../core/grid'
 import { cellToSvgPoints } from '../../core/grid'
-import { GRID_OPS } from '../../core/grid-ops'
 
 // テスト用にアウトライン計算ロジックを直接テスト
 
