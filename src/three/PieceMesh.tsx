@@ -30,19 +30,29 @@ export function PieceMesh({
 
   const rimColor = useMemo(() => {
     const c = new THREE.Color(color)
-    c.multiplyScalar(0.6)
+    c.multiplyScalar(0.5)
     return c
   }, [color])
+
+  const attenuationColor = useMemo(() => new THREE.Color(color), [color])
 
   return (
     <group position={position} scale={[scale, scale, scale]}>
       <mesh ref={meshRef} geometry={geometry}>
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           color={color}
+          transmission={1.0}
           transparent
-          opacity={0.8}
-          roughness={0.15}
-          metalness={0.1}
+          opacity={1.0}
+          roughness={0.1}
+          metalness={0}
+          ior={1.5}
+          thickness={0.5}
+          attenuationColor={attenuationColor}
+          attenuationDistance={10}
+          clearcoat={0.3}
+          clearcoatRoughness={0.1}
+          envMapIntensity={1.5}
           side={THREE.DoubleSide}
         />
       </mesh>

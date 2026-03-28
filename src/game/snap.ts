@@ -1,32 +1,9 @@
 import type { Cell } from '../core/grid'
 import { cellKey } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
-import { GRID_OPS } from '../core/grid-ops'
 import type { Position, GridPosition } from './state'
+import { svgCellsBbox, svgBboxCenter } from './bbox'
 import { getPlacedCells } from './placement'
-import { svgBboxCenter } from './coords'
-
-/**
- * ボードの SVG bounding box を計算する。
- */
-function boardBoundingBox(
-  boardCells: Cell[],
-  cellSize: number,
-  gridType: GridType,
-): { minX: number; maxX: number; minY: number; maxY: number } {
-  const ops = GRID_OPS[gridType]
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const cell of boardCells) {
-    const pts = ops.cellToSvgPoints(cell, cellSize)
-    for (const [x, y] of pts) {
-      if (x < minX) minX = x
-      if (x > maxX) maxX = x
-      if (y < minY) minY = y
-      if (y > maxY) maxY = y
-    }
-  }
-  return { minX, maxX, minY, maxY }
-}
 
 /**
  * Find a valid snap position for a piece being dropped on the board.
@@ -48,7 +25,7 @@ export function findSnapPosition(
   if (boardCells.length === 0) return null
 
   // ドロップ位置がボード内にあるか判定（マージンなし）
-  const bbox = boardBoundingBox(boardCells, cellSize, gridType)
+  const bbox = svgCellsBbox(boardCells, cellSize, gridType)
   if (
     dropPosition.x < bbox.minX ||
     dropPosition.x > bbox.maxX ||

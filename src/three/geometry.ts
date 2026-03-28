@@ -3,17 +3,26 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Cell } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
 import { GRID_OPS } from '../core/grid-ops'
+import { geometryCenteringOffset } from '../game/bbox'
 
 // ピース形状パラメータ
-const RIM_WIDTH = 3.5         // リムの幅（水平方向）
-const RIM_SLAB = 2            // リム天面の厚み
-const CENTER_DEPTH = 4        // 凹み中央部の厚み
+const RIM_WIDTH = 3.5
+const RIM_SLAB = 2
+const CENTER_DEPTH = 4
 
 // ボードパラメータ
 const BOARD_DEPTH = 2
 const BOARD_CELL_INSET = 2.5
 
-// --- 座標キー ---
+/**
+ * セル群の SVG ポリゴン頂点配列を返す。
+ * computeOutline に渡す形式。
+ */
+function getCellPolygons(cells: Cell[], cellSize: number, gridType: GridType): [number, number][][] {
+  const ops = GRID_OPS[gridType]
+  return cells.map(c => [...ops.cellToSvgPoints(c, cellSize)] as [number, number][])
+}
+
 function ptKey(x: number, y: number): string {
   return `${Math.round(x * 1000)},${Math.round(y * 1000)}`
 }
@@ -107,9 +116,7 @@ export function pieceToGeometry(
   cellSize: number,
   gridType: GridType,
 ): THREE.BufferGeometry {
-  const ops = GRID_OPS[gridType]
-  const cellPoints = cells.map(c => [...ops.cellToSvgPoints(c, cellSize)] as [number, number][])
-  const outline = computeOutline(cellPoints)
+  const outline = computeOutline(getCellPolygons(cells, cellSize, gridType))
 
   if (outline.length < 3) return new THREE.BufferGeometry()
 
@@ -136,17 +143,8 @@ export function pieceToGeometry(
   rimGeo.dispose()
   centerGeo.dispose()
 
-  // 元のセル SVG bbox center でセンタリング
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const pts of cellPoints) {
-    for (const [px, py] of pts) {
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (-py < minY) minY = -py
-      if (-py > maxY) maxY = -py
-    }
-  }
-  geo.translate(-(minX + maxX) / 2, -(minY + maxY) / 2, 0)
+  const center = geometryCenteringOffset(cells, cellSize, gridType)
+  geo.translate(-center.x, -center.y, 0)
 
   return geo
 }
@@ -216,22 +214,11 @@ export function pieceRimLineGeometry(
   cellSize: number,
   gridType: GridType,
 ): { outer: THREE.BufferGeometry; inner: THREE.BufferGeometry } {
-  const ops = GRID_OPS[gridType]
-  const cellPoints = cells.map(c => [...ops.cellToSvgPoints(c, cellSize)] as [number, number][])
-  const outline = computeOutline(cellPoints)
+  const outline = computeOutline(getCellPolygons(cells, cellSize, gridType))
 
-  // センタリングオフセット
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const pts of cellPoints) {
-    for (const [px, py] of pts) {
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (-py < minY) minY = -py
-      if (-py > maxY) maxY = -py
-    }
-  }
-  const offX = -(minX + maxX) / 2
-  const offY = -(minY + maxY) / 2
+  const center = geometryCenteringOffset(cells, cellSize, gridType)
+  const offX = -center.x
+  const offY = -center.y
   const z = CENTER_DEPTH + RIM_SLAB + 0.1
 
   // 外縁（閉じたループ）
@@ -256,9 +243,7 @@ export function boardFrameGeometry(
   cellSize: number,
   gridType: GridType,
 ): THREE.BufferGeometry {
-  const ops = GRID_OPS[gridType]
-  const cellPoints = cells.map(c => [...ops.cellToSvgPoints(c, cellSize)] as [number, number][])
-  const outline = computeOutline(cellPoints)
+  const outline = computeOutline(getCellPolygons(cells, cellSize, gridType))
   if (outline.length < 3) return new THREE.BufferGeometry()
 
   const FRAME_WIDTH = 5.0
@@ -294,17 +279,8 @@ export function boardFrameGeometry(
     bevelEnabled: false,
   })
 
-  // センタリング（cellsToGeometry と同じ基準）
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const pts of cellPoints) {
-    for (const [px, py] of pts) {
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (-py < minY) minY = -py
-      if (-py > maxY) maxY = -py
-    }
-  }
-  geo.translate(-(minX + maxX) / 2, -(minY + maxY) / 2, 0)
+  const center = geometryCenteringOffset(cells, cellSize, gridType)
+  geo.translate(-center.x, -center.y, 0)
 
   return geo
 }
@@ -317,24 +293,14 @@ export function boardFrameLineGeometry(
   cellSize: number,
   gridType: GridType,
 ): { outer: THREE.BufferGeometry; inner: THREE.BufferGeometry } {
-  const ops = GRID_OPS[gridType]
-  const cellPoints = cells.map(c => [...ops.cellToSvgPoints(c, cellSize)] as [number, number][])
-  const outline = computeOutline(cellPoints)
+  const outline = computeOutline(getCellPolygons(cells, cellSize, gridType))
 
   const FRAME_WIDTH = 5.0
   const outerOutline = offsetOutline(outline, -FRAME_WIDTH)
 
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const pts of cellPoints) {
-    for (const [px, py] of pts) {
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (-py < minY) minY = -py
-      if (-py > maxY) maxY = -py
-    }
-  }
-  const offX = -(minX + maxX) / 2
-  const offY = -(minY + maxY) / 2
+  const center = geometryCenteringOffset(cells, cellSize, gridType)
+  const offX = -center.x
+  const offY = -center.y
   const z = CENTER_DEPTH + RIM_SLAB + 0.1
 
   // 外縁（フレーム外側）

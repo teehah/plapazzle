@@ -1,6 +1,7 @@
 import type { PuzzleDef } from '../core/puzzle'
 import type { GridType } from '../core/grid-ops'
-import { GRID_OPS } from '../core/grid-ops'
+import { svgBboxHalfExtent } from './bbox'
+import { type Rect, rectsOverlap } from './collision'
 
 export type Position = { x: number; y: number }
 export type GridPosition = { row: number; col: number }
@@ -41,40 +42,6 @@ export type GameAction =
   | { type: 'snap'; uid: string; gridPosition: GridPosition; worldPosition: Position; timestamp: number }
   | { type: 'unsnap'; uid: string; position: Position; timestamp: number }
 
-/**
- * ボードのワールド座標 half-extent を返す（ジオメトリはセンタリング済み）。
- */
-function boardHalfExtent(puzzle: PuzzleDef, cellSize: number) {
-  const ops = GRID_OPS[puzzle.gridType]
-  let minSvgX = Infinity, maxSvgX = -Infinity, minSvgY = Infinity, maxSvgY = -Infinity
-  for (const cell of puzzle.board) {
-    for (const [px, py] of ops.cellToSvgPoints(cell, cellSize)) {
-      if (px < minSvgX) minSvgX = px
-      if (px > maxSvgX) maxSvgX = px
-      if (py < minSvgY) minSvgY = py
-      if (py > maxSvgY) maxSvgY = py
-    }
-  }
-  return { hw: (maxSvgX - minSvgX) / 2, hh: (maxSvgY - minSvgY) / 2 }
-}
-
-/**
- * ピースの half-extent を返す（初期 orientation のセルから計算）。
- */
-function pieceHalfExtent(cells: { row: number; col: number; dir: 0 | 1 }[], gridType: GridType, cellSize: number) {
-  const ops = GRID_OPS[gridType]
-  let minSvgX = Infinity, maxSvgX = -Infinity, minSvgY = Infinity, maxSvgY = -Infinity
-  for (const cell of cells) {
-    for (const [px, py] of ops.cellToSvgPoints(cell, cellSize)) {
-      if (px < minSvgX) minSvgX = px
-      if (px > maxSvgX) maxSvgX = px
-      if (py < minSvgY) minSvgY = py
-      if (py > maxSvgY) maxSvgY = py
-    }
-  }
-  return { hw: (maxSvgX - minSvgX) / 2, hh: (maxSvgY - minSvgY) / 2 }
-}
-
 const INIT_CELL_SIZE = 30  // GameScreen.CELL_SIZE と同じ
 
 export function initGameState(puzzle: PuzzleDef): GameState {
@@ -89,20 +56,13 @@ export function initGameState(puzzle: PuzzleDef): GameState {
     gridPosition: null,
   }))
 
-  const board = boardHalfExtent(puzzle, INIT_CELL_SIZE)
+  const board = svgBboxHalfExtent(puzzle.board, INIT_CELL_SIZE, puzzle.gridType)
   const margin = INIT_CELL_SIZE * 0.3
-
-  type Rect = { minX: number; maxX: number; minY: number; maxY: number }
-
-  function bboxOverlaps(a: Rect, b: Rect): boolean {
-    return a.maxX > b.minX && a.minX < b.maxX && a.maxY > b.minY && a.minY < b.maxY
-  }
 
   function pieceBbox(x: number, y: number, he: { hw: number; hh: number }): Rect {
     return { minX: x - he.hw, maxX: x + he.hw, minY: y - he.hh, maxY: y + he.hh }
   }
 
-  // ボードを障害物として登録（マージン込み）
   const boardRect: Rect = {
     minX: -board.hw - margin, maxX: board.hw + margin,
     minY: -board.hh - margin, maxY: board.hh + margin,
@@ -118,7 +78,7 @@ export function initGameState(puzzle: PuzzleDef): GameState {
   const angleStep = (2 * Math.PI) / pieces.length
   pieces.forEach((p, i) => {
     const pieceDef = puzzle.pieces[i]
-    const pe = pieceHalfExtent(pieceDef.cells, puzzle.gridType, INIT_CELL_SIZE)
+    const pe = svgBboxHalfExtent(pieceDef.cells, INIT_CELL_SIZE, puzzle.gridType)
     const baseAngle = angleStep * i + (Math.random() - 0.5) * 0.5
     let x = Math.cos(baseAngle) * (radius + Math.random() * 30)
     let y = Math.sin(baseAngle) * (radius + Math.random() * 30)
@@ -130,7 +90,7 @@ export function initGameState(puzzle: PuzzleDef): GameState {
         minY: myBbox.minY - margin, maxY: myBbox.maxY + margin,
       }
       for (const obs of obstacles) {
-        if (bboxOverlaps(padded, obs)) return true
+        if (rectsOverlap(padded, obs)) return true
       }
       return false
     }

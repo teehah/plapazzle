@@ -23,9 +23,11 @@
  */
 import type { Cell } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
-import { GRID_OPS } from '../core/grid-ops'
 import type { Position, GridPosition } from './state'
+import { svgBboxCenter } from './bbox'
 import { gridToWorld, getPlacedCells } from './placement'
+
+export { svgBboxCenter } from './bbox'
 
 /**
  * セル配列の SVG 座標系での重心を返す。
@@ -40,29 +42,6 @@ export function svgCentroid(
     x: positions.reduce((s, p) => s + p.x, 0) / positions.length,
     y: positions.reduce((s, p) => s + p.y, 0) / positions.length,
   }
-}
-
-/**
- * セル配列の SVG 頂点 bounding box 中心を返す。
- * cellsToGeometry のセンタリングと一致する。
- */
-export function svgBboxCenter(
-  cells: Cell[],
-  cellSize: number,
-  gridType: GridType,
-): Position {
-  const ops = GRID_OPS[gridType]
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const cell of cells) {
-    const pts = ops.cellToSvgPoints(cell, cellSize)
-    for (const [px, py] of pts) {
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (py < minY) minY = py
-      if (py > maxY) maxY = py
-    }
-  }
-  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
 }
 
 /**

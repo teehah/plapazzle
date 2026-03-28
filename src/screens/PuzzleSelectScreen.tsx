@@ -4,17 +4,14 @@ import type { PuzzleRecord } from '../storage/db'
 import type { Cell } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
 import { GRID_OPS } from '../core/grid-ops'
+import { svgPointsBbox } from '../game/bbox'
+import { formatTime } from '../utils/format'
 
 type Props = {
   puzzles: PuzzleDef[]
   records: Map<string, PuzzleRecord>
   onSelect: (puzzleId: string) => void
   onGallery: (puzzleId: string) => void
-}
-
-function formatTime(ms: number): string {
-  const s = Math.floor(ms / 1000)
-  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 }
 
 const GRID_LABELS: Record<string, string> = {
@@ -35,17 +32,13 @@ function BoardPreview({ board, gridType }: { board: Cell[]; gridType: GridType }
   const cellSize = 10
   const paths: string[] = []
 
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  const allPoints: [number, number][] = []
   for (const cell of board) {
     const pts = ops.cellToSvgPoints(cell, cellSize)
     paths.push('M ' + pts.map(([x, y]) => `${x},${y}`).join(' L ') + ' Z')
-    for (const [x, y] of pts) {
-      if (x < minX) minX = x
-      if (x > maxX) maxX = x
-      if (y < minY) minY = y
-      if (y > maxY) maxY = y
-    }
+    for (const pt of pts) allPoints.push(pt)
   }
+  const { minX, maxX, minY, maxY } = svgPointsBbox(allPoints)
 
   const pad = 2
   const w = maxX - minX + pad * 2

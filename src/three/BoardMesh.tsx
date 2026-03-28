@@ -31,25 +31,31 @@ export function BoardMesh({ cells, cellSize, gridType }: Props) {
     <group position={[0, 0, -2]}>
       {/* グリッドセル */}
       <mesh geometry={cellGeo}>
-        <meshStandardMaterial
-          color="#d0d0d0"
-          transparent
-          opacity={0.5}
-          roughness={0.2}
-          metalness={0.0}
-          depthWrite={false}
+        <meshPhysicalMaterial
+          color="#ffffff"
+          transmission={0.9}
+          roughness={0.05}
+          metalness={0}
+          ior={1.5}
+          thickness={2}
+          attenuationColor={new THREE.Color('#e0e0e0')}
+          attenuationDistance={2}
           side={THREE.DoubleSide}
         />
       </mesh>
       {/* 外枠フレーム */}
       <mesh geometry={frameGeo}>
-        <meshStandardMaterial
-          color="#b8b8b8"
-          transparent
-          opacity={0.6}
-          roughness={0.15}
-          metalness={0.05}
-          depthWrite={false}
+        <meshPhysicalMaterial
+          color="#ffffff"
+          transmission={0.85}
+          roughness={0.05}
+          metalness={0}
+          ior={1.5}
+          thickness={3}
+          attenuationColor={new THREE.Color('#d0d0d0')}
+          attenuationDistance={2}
+          clearcoat={0.5}
+          clearcoatRoughness={0.1}
           side={THREE.DoubleSide}
         />
       </mesh>
