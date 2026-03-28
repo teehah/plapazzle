@@ -1,6 +1,6 @@
 import type { Cell } from './grid'
 import { cellKey } from './grid'
-import { normalize, uniqueOrientations } from './piece'
+import { uniqueOrientations } from './piece'
 import type { PieceDef } from './piece'
 import { solveExactCover } from './dlx'
 
