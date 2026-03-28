@@ -5,8 +5,9 @@ import { PIECES } from '../core/piece'
 export const PUZZLES: PuzzleDef[] = [
   {
     id: 'no6',
-    name: 'プラパズル No.6',
+    name: 'ヘキサモンド 72セル',
     board: NO6_BOARD.cells,
     pieces: PIECES,
+    gridType: 'triangular',
   },
 ]

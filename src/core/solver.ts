@@ -1,8 +1,9 @@
 import type { Cell } from './grid'
 import { cellKey } from './grid'
-import { uniqueOrientations } from './piece'
 import type { PieceDef } from './piece'
+import { uniqueOrientations as triOrientations } from './piece'
 import { solveExactCover } from './dlx'
+import type { GridType } from './grid-ops'
 
 export type Solution = Map<string, string>  // cellKey -> pieceId
 
@@ -10,6 +11,7 @@ export type Solution = Map<string, string>  // cellKey -> pieceId
 export type WorkerInput = {
   board: Cell[]
   pieces: PieceDef[]
+  gridType: GridType
 }
 
 /** WebWorkerからの出力メッセージ型 */
@@ -24,7 +26,8 @@ export type WorkerResult = {
 export function buildAndSolve(
   boardCells: Cell[],
   pieces: PieceDef[],
-  onSolution: (sol: Solution) => void
+  onSolution: (sol: Solution) => void,
+  orientationsFn?: (cells: Cell[]) => Cell[][],
 ): void {
   // セルインデックスマップ
   const cellIndex = new Map<string, number>()
@@ -49,7 +52,7 @@ export function buildAndSolve(
 
   for (let pi = 0; pi < pieces.length; pi++) {
     const piece = pieces[pi]
-    const orientations = uniqueOrientations(piece.cells)
+    const orientations = (orientationsFn ?? triOrientations)(piece.cells)
 
     for (const orientation of orientations) {
       // この向きの各セルについてオフセットを試す

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Board } from './ui/Board'
 import { Controls } from './ui/Controls'
 import { PUZZLES } from './data/puzzles'
+import { GRID_OPS } from './core/grid-ops'
 import type { Solution, WorkerResult, WorkerInput } from './core/solver'
 
 export default function App() {
@@ -20,7 +21,7 @@ export default function App() {
       new URL('./worker/solver.worker.ts', import.meta.url),
       { type: 'module' }
     )
-    worker.postMessage({ board: puzzle.board, pieces: puzzle.pieces } satisfies WorkerInput)
+    worker.postMessage({ board: puzzle.board, pieces: puzzle.pieces, gridType: puzzle.gridType } satisfies WorkerInput)
     worker.onmessage = (e: MessageEvent<WorkerResult>) => {
       const sols: Solution[] = e.data.solutions.map(entries => new Map(entries))
       setSolutions(sols)
@@ -55,7 +56,7 @@ export default function App() {
           </select>
         </div>
       )}
-      <Board cells={puzzle.board} solution={currentSolution} />
+      <Board cells={puzzle.board} grid={GRID_OPS[puzzle.gridType]} solution={currentSolution} />
       <Controls
         status={status}
         total={solutions.length}

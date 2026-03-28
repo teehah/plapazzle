@@ -5,8 +5,8 @@ function c(row: number, col: number, dir: 0 | 1): Cell {
 }
 
 /**
- * プラパズル No.6 (Tenyo HexiamondsTenyo) のボード定義 -- 72セルの不規則六角形
- * 出典: puzzler.sourceforge.net HexiamondsTenyo
+ * ヘキサモンド 72セルボード定義 -- 不規則六角形
+ * 出典: puzzler.sourceforge.net HexiamondsTenyo 座標系
  *
  * 座標系: puzzler の Triangular3D (x, y, z) をそのまま (row, col, dir) に対応
  *   x -> row, y -> col, z -> dir
