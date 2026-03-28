@@ -59,12 +59,21 @@ export function getOrientedCells(
   gridType: GridType,
 ): Cell[] {
   const ops = GRID_OPS[gridType]
-  const baseCells = flipped
-    ? piece.cells.map(c => ({ row: c.row, col: -c.col, dir: c.dir }))
-    : piece.cells
-  const orientations = ops.uniqueOrientations(baseCells)
+  // 回転: uniqueOrientations から選択（ミラー含まない回転のみ使用）
+  const orientations = ops.uniqueOrientations(piece.cells)
   const idx = orientationIndex % orientations.length
-  return orientations[idx]
+  let cells = orientations[idx]
+
+  // フリップ: 選択後にミラー適用
+  if (flipped) {
+    cells = cells.map(c => ops.mirror(c))
+    // 正規化（min row/col を 0 に）
+    const minRow = Math.min(...cells.map(c => c.row))
+    const minCol = Math.min(...cells.map(c => c.col))
+    cells = cells.map(c => ({ row: c.row - minRow, col: c.col - minCol, dir: c.dir }))
+  }
+
+  return cells
 }
 
 /**

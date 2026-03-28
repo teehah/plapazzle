@@ -1,5 +1,9 @@
+import { useRef, useCallback } from 'react'
 import type { PuzzleDef } from '../core/puzzle'
 import type { PuzzleRecord } from '../storage/db'
+import type { Cell } from '../core/grid'
+import type { GridType } from '../core/grid-ops'
+import { GRID_OPS } from '../core/grid-ops'
 
 type Props = {
   puzzles: PuzzleDef[]
@@ -13,34 +17,168 @@ function formatTime(ms: number): string {
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 }
 
+const GRID_LABELS: Record<string, string> = {
+  triangular: '三角',
+  square: '正方形',
+  hexagonal: '六角',
+}
+
+function boardSizeLabel(board: { row: number; col: number }[]): string {
+  const rows = Math.max(...board.map(c => c.row)) + 1
+  const cols = Math.max(...board.map(c => c.col)) + 1
+  return `${rows}×${cols}`
+}
+
+/** ボード形状の SVG プレビューを生成 */
+function BoardPreview({ board, gridType }: { board: Cell[]; gridType: GridType }) {
+  const ops = GRID_OPS[gridType]
+  const cellSize = 10
+  const paths: string[] = []
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const cell of board) {
+    const pts = ops.cellToSvgPoints(cell, cellSize)
+    paths.push('M ' + pts.map(([x, y]) => `${x},${y}`).join(' L ') + ' Z')
+    for (const [x, y] of pts) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+
+  const pad = 2
+  const w = maxX - minX + pad * 2
+  const h = maxY - minY + pad * 2
+
+  return (
+    <svg
+      viewBox={`${minX - pad} ${minY - pad} ${w} ${h}`}
+      style={{ width: '100%', height: '100%' }}
+    >
+      <path
+        d={paths.join(' ')}
+        fill="rgba(52,73,94,0.15)"
+        stroke="rgba(52,73,94,0.3)"
+        strokeWidth={0.5}
+      />
+    </svg>
+  )
+}
+
 export function PuzzleSelectScreen({ puzzles, records, onSelect, onGallery }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dragState = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false, targetId: '' })
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    const el = scrollRef.current
+    if (!el) return
+    // タップ対象のパズルIDを取得
+    const card = (e.target as HTMLElement).closest<HTMLElement>('[data-puzzle-id]')
+    const targetId = card?.dataset.puzzleId ?? ''
+    dragState.current = { dragging: true, startX: e.clientX, scrollLeft: el.scrollLeft, moved: false, targetId }
+    el.setPointerCapture(e.pointerId)
+    el.style.scrollSnapType = 'none'
+    el.style.cursor = 'grabbing'
+  }, [])
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragState.current.dragging) return
+    const dx = e.clientX - dragState.current.startX
+    if (Math.abs(dx) > 5) dragState.current.moved = true
+    scrollRef.current!.scrollLeft = dragState.current.scrollLeft - dx
+  }, [])
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!dragState.current.dragging) return
+    const { moved, targetId } = dragState.current
+    dragState.current.dragging = false
+    const el = scrollRef.current!
+    el.releasePointerCapture(e.pointerId)
+    el.style.scrollSnapType = 'x mandatory'
+    el.style.cursor = ''
+
+    // タップ（ドラッグなし）→ パズル選択
+    if (!moved && targetId) {
+      onSelect(targetId)
+    }
+  }, [onSelect])
+
   return (
     <div style={{
       minHeight: '100dvh',
       background: 'linear-gradient(135deg, #e8e0d8, #d4c8be)',
-      padding: 24, fontFamily: 'sans-serif',
+      display: 'flex', flexDirection: 'column', justifyContent: 'center',
+      fontFamily: 'sans-serif',
     }}>
-      <h1 style={{ textAlign: 'center', color: '#34495e', fontSize: 18, marginBottom: 24 }}>パズルを選ぶ</h1>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 400, margin: '0 auto' }}>
+      <h1 style={{ textAlign: 'center', color: '#34495e', fontSize: 18, margin: '24px 0 16px' }}>パズルを選ぶ</h1>
+
+      {/* 横スクロール カルーセル（ドラッグ/スワイプ対応） */}
+      <div
+        ref={scrollRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        style={{
+          display: 'flex', gap: 16, overflowX: 'auto',
+          padding: '16px 24px',
+          scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch',
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+      >
         {puzzles.map(puzzle => {
           const record = records.get(puzzle.id) ?? { bestTimeMs: null, discoveredSolutionIds: [], totalClears: 0 }
+          const cleared = record.totalClears > 0
           return (
-            <div key={puzzle.id} onClick={() => onSelect(puzzle.id)} style={{
-              background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(52,73,94,0.15)',
-              borderRadius: 12, padding: 16, cursor: 'pointer',
-            }}>
-              <div style={{ fontSize: 18, fontWeight: 600, color: '#34495e' }}>{puzzle.name}</div>
-              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', marginTop: 4 }}>
-                {puzzle.pieces.length} ピース · {puzzle.board.length} セル · {puzzle.gridType}
+            <div
+              key={puzzle.id}
+              data-puzzle-id={puzzle.id}
+              style={{
+                flex: '0 0 280px',
+                scrollSnapAlign: 'center',
+                background: 'rgba(255,255,255,0.6)',
+                border: '1px solid rgba(52,73,94,0.12)',
+                borderRadius: 16,
+                overflow: 'hidden',
+                cursor: 'pointer',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+              }}
+            >
+              {/* ボードプレビュー */}
+              <div style={{
+                height: 160,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 16,
+                background: 'rgba(52,73,94,0.03)',
+              }}>
+                <BoardPreview board={puzzle.board} gridType={puzzle.gridType} />
               </div>
-              {record.totalClears > 0 && (
-                <div style={{ marginTop: 8, display: 'flex', gap: 16, fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
-                  <span>🏆 {record.bestTimeMs !== null ? formatTime(record.bestTimeMs) : '-'}</span>
-                  <span>📋 {record.discoveredSolutionIds.length} 解発見</span>
-                  <span onClick={e => { e.stopPropagation(); onGallery(puzzle.id) }}
-                    style={{ color: 'rgba(52,73,94,0.7)', cursor: 'pointer' }}>解法一覧 →</span>
+
+              {/* 情報 */}
+              <div style={{ padding: '12px 16px 16px' }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#34495e' }}>{puzzle.name}</div>
+                <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', marginTop: 4 }}>
+                  {GRID_LABELS[puzzle.gridType] ?? puzzle.gridType} · {boardSizeLabel(puzzle.board)} · {puzzle.pieces.length} ピース
                 </div>
-              )}
+                <div style={{
+                  marginTop: 8, display: 'flex', gap: 12,
+                  fontSize: 11, color: 'rgba(0,0,0,0.4)',
+                }}>
+                  <span>ベスト: {record.bestTimeMs !== null ? formatTime(record.bestTimeMs) : '-'}</span>
+                  <span>{record.discoveredSolutionIds.length} 解発見</span>
+                  {cleared && (
+                    <span
+                      onClick={e => { e.stopPropagation(); onGallery(puzzle.id) }}
+                      style={{ color: 'rgba(52,73,94,0.7)', cursor: 'pointer', marginLeft: 'auto' }}
+                    >
+                      解法一覧 →
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )
         })}

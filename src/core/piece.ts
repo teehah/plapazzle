@@ -12,7 +12,7 @@ function rotate60(c: Cell): Cell {
 }
 
 /** 左右ミラー（反転） */
-function mirror(c: Cell): Cell {
+export function mirror(c: Cell): Cell {
   return {
     row: -(c.row + c.col + c.dir),
     col: c.col,

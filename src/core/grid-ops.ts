@@ -1,11 +1,12 @@
 import type { Cell } from './grid'
 import { neighbors as triNeighbors, cellToSvgPoints as triSvgPoints } from './grid'
-import { uniqueOrientations as triUniqueOrientations } from './piece'
+import { uniqueOrientations as triUniqueOrientations, mirror as triMirror } from './piece'
 
 export interface GridOps {
   neighbors(c: Cell): Cell[]
   cellToSvgPoints(c: Cell, size: number): [number, number][]
   uniqueOrientations(cells: Cell[]): Cell[][]
+  mirror(c: Cell): Cell
 }
 
 export type GridType = 'triangular' | 'square'
@@ -16,6 +17,7 @@ const triangularOps: GridOps = {
   neighbors: triNeighbors,
   cellToSvgPoints: (c, size) => [...triSvgPoints(c, size)],
   uniqueOrientations: triUniqueOrientations,
+  mirror: triMirror,
 }
 
 // --- 正方形グリッド ---
@@ -78,6 +80,8 @@ const squareOps: GridOps = {
     }
     return result
   },
+
+  mirror: sqMirror,
 }
 
 // --- レジストリ ---
