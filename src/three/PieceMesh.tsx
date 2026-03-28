@@ -18,16 +18,10 @@ export function PieceMesh({
 }: Props) {
   const meshRef = useRef<THREE.Mesh>(null)
 
-  const geometry = useMemo(() => {
-    const geo = cellsToGeometry(cells, cellSize, gridType)
-    // ジオメトリをセンタリング: position がピースの視覚的中心と一致するようにする
-    geo.computeBoundingBox()
-    const box = geo.boundingBox!
-    const cx = (box.min.x + box.max.x) / 2
-    const cy = (box.min.y + box.max.y) / 2
-    geo.translate(-cx, -cy, 0)
-    return geo
-  }, [cells, cellSize, gridType])
+  const geometry = useMemo(
+    () => cellsToGeometry(cells, cellSize, gridType),
+    [cells, cellSize, gridType],
+  )
 
   return (
     <mesh

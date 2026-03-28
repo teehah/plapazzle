@@ -42,39 +42,39 @@ describe('initGameState', () => {
 describe('gameReducer', () => {
   it('rotate でorientationIndexが1増える', () => {
     const state = initGameState(testPuzzle)
-    const next = gameReducer(state, { type: 'rotate', pieceId: 'A', timestamp: 100 })
-    const pieceA = next.pieces.find(p => p.pieceId === 'A')!
+    const next = gameReducer(state, { type: 'rotate', uid: 'A_0', timestamp: 100 })
+    const pieceA = next.pieces.find(p => p.uid === 'A_0')!
     expect(pieceA.orientationIndex).toBe(1)
   })
 
   it('flip でflippedが反転する', () => {
     const state = initGameState(testPuzzle)
-    const next = gameReducer(state, { type: 'flip', pieceId: 'A', timestamp: 100 })
-    const pieceA = next.pieces.find(p => p.pieceId === 'A')!
+    const next = gameReducer(state, { type: 'flip', uid: 'A_0', timestamp: 100 })
+    const pieceA = next.pieces.find(p => p.uid === 'A_0')!
     expect(pieceA.flipped).toBe(true)
   })
 
   it('move で位置が更新される', () => {
     const state = initGameState(testPuzzle)
-    const next = gameReducer(state, { type: 'move', pieceId: 'A', position: { x: 50, y: 100 }, timestamp: 100 })
-    const pieceA = next.pieces.find(p => p.pieceId === 'A')!
+    const next = gameReducer(state, { type: 'move', uid: 'A_0', position: { x: 50, y: 100 }, timestamp: 100 })
+    const pieceA = next.pieces.find(p => p.uid === 'A_0')!
     expect(pieceA.position).toEqual({ x: 50, y: 100 })
   })
 
   it('snap でonBoardがtrueになりgridPositionが設定される', () => {
     const state = initGameState(testPuzzle)
     const next = gameReducer(state, {
-      type: 'snap', pieceId: 'A', gridPosition: { row: 0, col: 0 },
+      type: 'snap', uid: 'A_0', gridPosition: { row: 0, col: 0 },
       worldPosition: { x: 10, y: 20 }, timestamp: 100,
     })
-    const pieceA = next.pieces.find(p => p.pieceId === 'A')!
+    const pieceA = next.pieces.find(p => p.uid === 'A_0')!
     expect(pieceA.onBoard).toBe(true)
     expect(pieceA.gridPosition).toEqual({ row: 0, col: 0 })
   })
 
   it('アクションがactionsに記録される', () => {
     const state = initGameState(testPuzzle)
-    const next = gameReducer(state, { type: 'rotate', pieceId: 'A', timestamp: 100 })
+    const next = gameReducer(state, { type: 'rotate', uid: 'A_0', timestamp: 100 })
     expect(next.actions).toHaveLength(1)
     expect(next.actions[0].type).toBe('rotate')
   })
@@ -88,13 +88,13 @@ describe('gameReducer', () => {
   it('unsnap でonBoardがfalseになる', () => {
     let state = initGameState(testPuzzle)
     state = gameReducer(state, {
-      type: 'snap', pieceId: 'A', gridPosition: { row: 0, col: 0 },
+      type: 'snap', uid: 'A_0', gridPosition: { row: 0, col: 0 },
       worldPosition: { x: 10, y: 20 }, timestamp: 100,
     })
     state = gameReducer(state, {
-      type: 'unsnap', pieceId: 'A', position: { x: 50, y: 50 }, timestamp: 200,
+      type: 'unsnap', uid: 'A_0', position: { x: 50, y: 50 }, timestamp: 200,
     })
-    const pieceA = state.pieces.find(p => p.pieceId === 'A')!
+    const pieceA = state.pieces.find(p => p.uid === 'A_0')!
     expect(pieceA.onBoard).toBe(false)
     expect(pieceA.gridPosition).toBeNull()
   })

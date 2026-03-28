@@ -42,9 +42,23 @@ export function cellsToGeometry(
   }
 
   if (geometries.length === 0) return new THREE.BufferGeometry()
-  if (geometries.length === 1) return geometries[0]
 
-  const merged = mergeGeometries(geometries)
-  geometries.forEach((g) => g.dispose())
-  return merged ?? geometries[0]
+  let result: THREE.BufferGeometry
+  if (geometries.length === 1) {
+    result = geometries[0]
+  } else {
+    result = mergeGeometries(geometries) ?? geometries[0]
+    geometries.forEach((g) => g.dispose())
+  }
+
+  // センタリング: bounding box 中心を原点に移動
+  result.computeBoundingBox()
+  const box = result.boundingBox!
+  result.translate(
+    -(box.min.x + box.max.x) / 2,
+    -(box.min.y + box.max.y) / 2,
+    0,
+  )
+
+  return result
 }

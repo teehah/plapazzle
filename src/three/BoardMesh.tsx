@@ -17,18 +17,9 @@ export function BoardMesh({ cells, cellSize, gridType }: Props) {
     [cells, cellSize, gridType],
   )
 
-  const center = useMemo(() => {
-    geometry.computeBoundingBox()
-    const box = geometry.boundingBox!
-    return new THREE.Vector3(
-      -(box.min.x + box.max.x) / 2,
-      -(box.min.y + box.max.y) / 2,
-      0,
-    )
-  }, [geometry])
-
+  // cellsToGeometry がセンタリング済みなので、原点に配置
   return (
-    <mesh geometry={geometry} position={[center.x, center.y, -2]}>
+    <mesh geometry={geometry} position={[0, 0, -2]}>
       <meshPhysicalMaterial
         transmission={0.9}
         roughness={0.1}

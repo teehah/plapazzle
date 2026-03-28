@@ -35,18 +35,22 @@ type Props = {
   onClear: (state: GameState, clearTimeMs: number) => void
 }
 
+/**
+ * ボードジオメトリのセンタリングオフセットを計算する。
+ * cellsToGeometry と同じ bbox center を使用。
+ * このオフセットは SVG座標 ↔ ワールド座標変換に使われる。
+ */
 function computeBoardOffset(board: Cell[], cellSize: number, gridType: GridType): { x: number; y: number } {
   const ops = GRID_OPS[gridType]
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   for (const cell of board) {
     const pts = ops.cellToSvgPoints(cell, cellSize)
     for (const [px, py] of pts) {
-      const tx = px
-      const ty = -py
-      if (tx < minX) minX = tx
-      if (tx > maxX) maxX = tx
-      if (ty < minY) minY = ty
-      if (ty > maxY) maxY = ty
+      // geometry.ts と同じ: x = SVG x, y = -SVG y
+      if (px < minX) minX = px
+      if (px > maxX) maxX = px
+      if (-py < minY) minY = -py
+      if (-py > maxY) maxY = -py
     }
   }
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
@@ -100,10 +104,10 @@ function Scene({
   const dragStartClient = useRef({ x: 0, y: 0 })
   const dragStartWorld = useRef({ x: 0, y: 0 })
   const pieceStartPos = useRef({ x: 0, y: 0 })
-  const lastTapRef = useRef({ pieceId: '', time: 0 })
+  const lastTapRef = useRef({ uid: '', time: 0 })
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ピース mesh の参照を pieceId → mesh で保持
+  // ピース mesh の参照を uid → mesh で保持
   const pieceMeshMap = useRef<Map<string, THREE.Object3D>>(new Map())
 
   // state を ref に保持（イベントハンドラから最新を読むため）
@@ -118,12 +122,14 @@ function Scene({
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
 
     const pieceMeshes = Array.from(pieceMeshMap.current.values())
+    // R3F は rAF で matrixWorld を更新するため、クリック時に未更新の可能性がある
+    pieceMeshes.forEach(obj => obj.updateWorldMatrix(true, true))
     const intersects = raycaster.intersectObjects(pieceMeshes, true)
     if (intersects.length === 0) return null
 
     let obj: THREE.Object3D | null = intersects[0].object
     while (obj) {
-      if (obj.userData.pieceId) return obj.userData.pieceId as string
+      if (obj.userData.uid) return obj.userData.uid as string
       obj = obj.parent
     }
     return null
@@ -134,20 +140,19 @@ function Scene({
 
     function handleDown(e: PointerEvent) {
       const world = screenToWorld(e.clientX, e.clientY, camera, canvas)
-      const pieceId = findPieceAtScreen(e.clientX, e.clientY)
-      if (!pieceId) return
+      const uid = findPieceAtScreen(e.clientX, e.clientY)
+      if (!uid) return
 
-      const ps = stateRef.current.pieces.find(p => p.pieceId === pieceId)
+      const ps = stateRef.current.pieces.find(p => p.uid === uid)
       if (!ps) return
 
-
       if (ps.onBoard) {
-        dispatch({ type: 'unsnap', pieceId, position: ps.position, timestamp: Date.now() })
+        dispatch({ type: 'unsnap', uid, position: ps.position, timestamp: Date.now() })
       }
 
-      draggingRef.current = pieceId
+      draggingRef.current = uid
       dragStartedRef.current = false
-      setDraggingPieceId(pieceId)
+      setDraggingPieceId(uid)
       dragStartClient.current = { x: e.clientX, y: e.clientY }
       dragStartWorld.current = { x: world.x, y: world.y }
       pieceStartPos.current = { x: ps.position.x, y: ps.position.y }
@@ -175,7 +180,7 @@ function Scene({
         let newY = pieceStartPos.current.y + worldDy
         if (isMobile) newY += 20
 
-        dispatch({ type: 'move', pieceId: pid, position: { x: newX, y: newY }, timestamp: Date.now() })
+        dispatch({ type: 'move', uid: pid, position: { x: newX, y: newY }, timestamp: Date.now() })
       }
     }
 
@@ -194,31 +199,31 @@ function Scene({
         // タップ
         const now = Date.now()
         const last = lastTapRef.current
-        if (last.pieceId === pid && now - last.time < 300) {
+        if (last.uid === pid && now - last.time < 300) {
           if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current)
           tapTimeoutRef.current = null
-          dispatch({ type: 'flip', pieceId: pid, timestamp: now })
+          dispatch({ type: 'flip', uid: pid, timestamp: now })
           soundEngine.playFlip()
-          lastTapRef.current = { pieceId: '', time: 0 }
+          lastTapRef.current = { uid: '', time: 0 }
         } else {
-          lastTapRef.current = { pieceId: pid, time: now }
+          lastTapRef.current = { uid: pid, time: now }
           tapTimeoutRef.current = setTimeout(() => {
-            dispatch({ type: 'rotate', pieceId: pid, timestamp: Date.now() })
+            dispatch({ type: 'rotate', uid: pid, timestamp: Date.now() })
             soundEngine.playRotate()
             tapTimeoutRef.current = null
           }, 300)
         }
       } else {
         // ドラッグ終了 → スナップ判定
-        const ps = currentState.pieces.find(p => p.pieceId === pid)!
+        const ps = currentState.pieces.find(p => p.uid === pid)!
         const piece = puzzle.pieces.find(p => p.id === pid)!
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
 
         const occupied: Cell[] = []
         for (const other of currentState.pieces) {
-          if (other.pieceId === pid) continue
+          if (other.uid === pid) continue
           if (other.onBoard && other.gridPosition) {
-            const otherPiece = puzzle.pieces.find(p => p.id === other.pieceId)!
+            const otherPiece = puzzle.pieces[other.pieceIndex]
             const otherOriented = getOrientedCells(otherPiece, other.orientationIndex, other.flipped, puzzle.gridType)
             occupied.push(...getPlacedCells(otherOriented, other.gridPosition))
           }
@@ -229,7 +234,7 @@ function Scene({
 
         if (snapPos) {
           const worldPos = svgSnapToWorld(oriented, snapPos, CELL_SIZE, puzzle.gridType, boardOffset)
-          dispatch({ type: 'snap', pieceId: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: Date.now() })
+          dispatch({ type: 'snap', uid: pid, gridPosition: snapPos, worldPosition: worldPos, timestamp: Date.now() })
           soundEngine.playSnap()
         }
       }
@@ -251,20 +256,20 @@ function Scene({
       <Lighting darkMode={darkMode} />
       <BoardMesh cells={puzzle.board} cellSize={CELL_SIZE} gridType={puzzle.gridType} />
       {state.pieces.map(ps => {
-        const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
+        const piece = puzzle.pieces[ps.pieceIndex]
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
         const color = PIECE_COLORS[ps.pieceId] ?? '#888'
-        const isDragging = ps.pieceId === draggingPieceId
+        const isDragging = ps.uid === draggingPieceId
         const zPos = isDragging ? 5 : 0
 
         return (
           <group
-            key={ps.pieceId}
+            key={ps.uid}
             position={[ps.position.x, ps.position.y, zPos]}
-            userData={{ pieceId: ps.pieceId }}
+            userData={{ uid: ps.uid }}
             ref={(ref) => {
-              if (ref) pieceMeshMap.current.set(ps.pieceId, ref)
-              else pieceMeshMap.current.delete(ps.pieceId)
+              if (ref) pieceMeshMap.current.set(ps.uid, ref)
+              else pieceMeshMap.current.delete(ps.uid)
             }}
           >
             <PieceMesh
@@ -311,7 +316,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
     const allCovered: Cell[] = []
     for (const ps of state.pieces) {
       if (ps.onBoard && ps.gridPosition) {
-        const piece = puzzle.pieces.find(p => p.id === ps.pieceId)!
+        const piece = puzzle.pieces[ps.pieceIndex]
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
         const placed = getPlacedCells(oriented, ps.gridPosition)
         allCovered.push(...placed)
