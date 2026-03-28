@@ -217,6 +217,25 @@ function clampToViewport(
 }
 
 /**
+ * ボードサイズに合わせてカメラ zoom を自動調整する。
+ * ボード＋ピース配置スペースが画面内に収まるようにする。
+ */
+function AutoZoomCamera({ boardBbox }: { boardBbox: { minX: number; maxX: number; minY: number; maxY: number } }) {
+  const { size } = useThree()
+
+  // ボード幅/高さ＋ピース配置用マージン
+  const worldW = (boardBbox.maxX - boardBbox.minX) * 2.2  // ボードの2.2倍の領域を確保
+  const worldH = (boardBbox.maxY - boardBbox.minY) * 2.2
+
+  // 画面に収まるzoomを計算（幅/高さの小さい方に合わせる）
+  const zoomX = size.width / worldW
+  const zoomY = size.height / worldH
+  const zoom = Math.min(zoomX, zoomY)
+
+  return <OrthographicCamera makeDefault position={[0, 0, 50]} zoom={zoom} />
+}
+
+/**
  * 画面座標 → Three.js ワールド座標（OrthographicCamera）
  */
 function screenToWorld(
@@ -618,7 +637,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
         {soundEnabled ? 'SOUND ON' : 'SOUND OFF'}
       </div>
       <Canvas style={{ width: '100%', height: '100%', touchAction: 'none' }}>
-        <OrthographicCamera makeDefault position={[0, 0, 50]} zoom={2} />
+        <AutoZoomCamera boardBbox={boardBbox} />
         <Scene
           puzzle={puzzle}
           state={state}
