@@ -8,4 +8,5 @@ export type PuzzleDef = {
   board: Cell[]
   pieces: PieceDef[]
   gridType: GridType
+  boardSymmetries?: Array<(c: Cell) => Cell>
 }

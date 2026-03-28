@@ -86,3 +86,9 @@ export const TETROMINOES: PieceDef[] = [
     cells: [c(0,0), c(1,0), c(2,0), c(2,1)],
   },
 ]
+
+/** 2×2 正方形（ペントミノ8×8パズル用の隙間埋めピース） */
+export const SQUARE_2X2: PieceDef = {
+  id: 'Q',  // Q for "quad"
+  cells: [c(0,0), c(0,1), c(1,0), c(1,1)],
+}

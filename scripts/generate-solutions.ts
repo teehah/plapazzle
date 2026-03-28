@@ -48,8 +48,8 @@ for (const puzzle of PUZZLES) {
     console.log(`  TIMEOUT (>${TIMEOUT_MS / 1000}s) — ${allSolutions.length} solutions found before timeout`)
   }
 
-  // 重複排除（同一ピース入れ替え）
-  const unique = deduplicateSolutions(allSolutions)
+  // 重複排除（同一ピース入れ替え + ボード対称性）
+  const unique = deduplicateSolutions(allSolutions, puzzle.board, puzzle.boardSymmetries)
   console.log(`  Raw: ${allSolutions.length} → Dedup: ${unique.length}`)
 
   // JSON出力

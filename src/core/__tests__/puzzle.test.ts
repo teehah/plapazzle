@@ -18,10 +18,10 @@ describe('PuzzleDef', () => {
     }
   })
 
-  it('各パズルのボードセル数 = ピース数 × ピースあたりセル数', () => {
+  it('各パズルのボードセル数 = ピースの総セル数', () => {
     for (const puzzle of PUZZLES) {
-      const cellsPerPiece = puzzle.pieces[0].cells.length
-      expect(puzzle.board.length).toBe(puzzle.pieces.length * cellsPerPiece)
+      const totalPieceCells = puzzle.pieces.reduce((s, p) => s + p.cells.length, 0)
+      expect(puzzle.board.length).toBe(totalPieceCells)
     }
   })
 

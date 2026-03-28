@@ -95,14 +95,17 @@ export function buildAndSolve(
     }
   }
 
-  // Island pruning: 空きセルの連結成分がピースサイズの倍数でなければ枝刈り
-  const cellsPerPiece = pieces[0].cells.length
-  const pruner = neighborsFn
-    ? (getUncoveredCols: () => number[]) => {
-        const uncoveredCellCols = getUncoveredCols().filter(c => c >= numPieceCols)
-        const emptyCells = uncoveredCellCols.map(c => boardCells[c - numPieceCols])
-        return hasDeadIsland(emptyCells, neighborsFn, cellsPerPiece)
-      }
+  // Island pruning: 空きセルの連結成分が残りピースで埋められなければ枝刈り
+  const allSameSize = pieces.every(p => p.cells.length === pieces[0].cells.length)
+  const pruner = (neighborsFn && allSameSize)
+    ? (() => {
+        const cellsPerPiece = pieces[0].cells.length
+        return (getUncoveredCols: () => number[]) => {
+          const uncoveredCellCols = getUncoveredCols().filter(c => c >= numPieceCols)
+          const emptyCells = uncoveredCellCols.map(c => boardCells[c - numPieceCols])
+          return hasDeadIsland(emptyCells, neighborsFn, cellsPerPiece)
+        }
+      })()
     : undefined
 
   solveExactCover(numCols, placements.map(p => p.cols), (selectedRows) => {
