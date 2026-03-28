@@ -56,7 +56,7 @@ export default function App() {
           </select>
         </div>
       )}
-      <Board cells={puzzle.board} grid={GRID_OPS[puzzle.gridType]} solution={currentSolution} />
+      <Board cells={puzzle.board} pieces={puzzle.pieces} grid={GRID_OPS[puzzle.gridType]} solution={currentSolution} />
       <Controls
         status={status}
         total={solutions.length}

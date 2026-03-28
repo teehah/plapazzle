@@ -1,23 +1,30 @@
 import type { Solution } from '../core/solver'
 import type { Cell } from '../core/grid'
+import type { PieceDef } from '../core/piece'
 import { cellKey } from '../core/grid'
 import type { GridOps } from '../core/grid-ops'
 
 const CELL_SIZE = 30
 
-const PIECE_COLORS: Record<string, string> = {
-  I: '#e74c3c', O: '#3498db', X: '#2ecc71', C: '#f39c12',
-  E: '#9b59b6', P: '#1abc9c', F: '#e67e22', V: '#34495e',
-  S: '#e91e63', J: '#00bcd4', H: '#8bc34a', G: '#ff5722',
+// HSL で等間隔に色を生成（任意のピース数に対応）
+function buildColorMap(pieces: PieceDef[]): Record<string, string> {
+  const uniqueIds = [...new Set(pieces.map(p => p.id))]
+  const map: Record<string, string> = {}
+  for (let i = 0; i < uniqueIds.length; i++) {
+    const hue = (i * 360 / uniqueIds.length) % 360
+    map[uniqueIds[i]] = `hsl(${hue}, 70%, 55%)`
+  }
+  return map
 }
 
 function pointsStr(pts: [number, number][]): string {
   return pts.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
 }
 
-type Props = { cells: Cell[]; grid: GridOps; solution: Solution | null }
+type Props = { cells: Cell[]; pieces: PieceDef[]; grid: GridOps; solution: Solution | null }
 
-export function Board({ cells, grid, solution }: Props) {
+export function Board({ cells, pieces, grid, solution }: Props) {
+  const pieceColors = buildColorMap(pieces)
 
   let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0
   for (const cell of cells) {
@@ -43,7 +50,7 @@ export function Board({ cells, grid, solution }: Props) {
           const key = cellKey(cell)
           const pts = grid.cellToSvgPoints(cell, CELL_SIZE)
           const pieceId = solution?.get(key)
-          const fill = pieceId ? PIECE_COLORS[pieceId] ?? '#ccc' : '#f0f0f0'
+          const fill = pieceId ? pieceColors[pieceId] ?? '#ccc' : '#f0f0f0'
           return (
             <polygon
               key={key}

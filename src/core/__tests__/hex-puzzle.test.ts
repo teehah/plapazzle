@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import type { Cell } from '../grid'
 import { PUZZLES } from '../../data/puzzles'
 import { buildAndSolve } from '../solver'
 import { GRID_OPS } from '../grid-ops'
