@@ -9,7 +9,7 @@ self.onmessage = (e: MessageEvent<WorkerInput>) => {
 
   buildAndSolve(board, pieces, (sol: Solution) => {
     solutions.push([...sol.entries()])
-  }, ops.uniqueOrientations)
+  }, ops.uniqueOrientations, ops.neighbors)
 
   self.postMessage({ solutions } as WorkerResult)
 }

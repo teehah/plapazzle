@@ -13,10 +13,28 @@ export default function App() {
 
   const puzzle = PUZZLES[puzzleIndex]
 
-  const handleSolve = useCallback(() => {
+  const handleSolve = useCallback(async () => {
     setStatus('solving')
     setSolutions([])
     setIndex(0)
+
+    // 静的ファイルがあればそこからロード
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}solutions/${puzzle.id}.json`)
+      if (res.ok) {
+        const data = await res.json()
+        const sols: Solution[] = data.solutions.map(
+          (entries: [string, string][]) => new Map(entries)
+        )
+        setSolutions(sols)
+        setStatus('done')
+        return
+      }
+    } catch {
+      // fetch失敗 → Worker にフォールバック
+    }
+
+    // フォールバック: WebWorker でリアルタイム計算
     const worker = new Worker(
       new URL('./worker/solver.worker.ts', import.meta.url),
       { type: 'module' }

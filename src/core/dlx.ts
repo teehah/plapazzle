@@ -48,7 +48,8 @@ function uncover(c: ColNode) {
 export function solveExactCover(
   numCols: number,
   rows: number[][],
-  onSolution: (selectedRows: number[]) => void
+  onSolution: (selectedRows: number[]) => void,
+  shouldPrune?: (uncoveredCols: () => number[]) => boolean,
 ): void {
   const h = makeColNode(-1)
 
@@ -82,6 +83,15 @@ export function solveExactCover(
     }
   }
 
+  // 未カバー列の列挙（pruning用）
+  function getUncoveredCols(): number[] {
+    const cols: number[] = []
+    for (let j = h.R as ColNode; j !== h; j = j.R as ColNode) {
+      cols.push(j.name)
+    }
+    return cols
+  }
+
   const solution: number[] = []
   function search() {
     if (h.R === h) {
@@ -97,7 +107,11 @@ export function solveExactCover(
     for (let r = c.D; r !== c; r = r.D) {
       solution.push(r.rowIndex)
       for (let j = r.R; j !== r; j = j.R) cover(j.C)
-      search()
+
+      if (!shouldPrune || !shouldPrune(getUncoveredCols)) {
+        search()
+      }
+
       for (let j = r.L; j !== r; j = j.L) uncover(j.C)
       solution.pop()
     }

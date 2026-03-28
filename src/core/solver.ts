@@ -4,6 +4,7 @@ import type { PieceDef } from './piece'
 import { uniqueOrientations as triOrientations } from './piece'
 import { solveExactCover } from './dlx'
 import type { GridType } from './grid-ops'
+import { hasDeadIsland } from './island-pruning'
 
 export type Solution = Map<string, string>  // cellKey -> pieceId
 
@@ -28,6 +29,7 @@ export function buildAndSolve(
   pieces: PieceDef[],
   onSolution: (sol: Solution) => void,
   orientationsFn?: (cells: Cell[]) => Cell[][],
+  neighborsFn?: (c: Cell) => Cell[],
 ): void {
   // セルインデックスマップ
   const cellIndex = new Map<string, number>()
@@ -93,6 +95,16 @@ export function buildAndSolve(
     }
   }
 
+  // Island pruning: 空きセルの連結成分がピースサイズの倍数でなければ枝刈り
+  const cellsPerPiece = pieces[0].cells.length
+  const pruner = neighborsFn
+    ? (getUncoveredCols: () => number[]) => {
+        const uncoveredCellCols = getUncoveredCols().filter(c => c >= numPieceCols)
+        const emptyCells = uncoveredCellCols.map(c => boardCells[c - numPieceCols])
+        return hasDeadIsland(emptyCells, neighborsFn, cellsPerPiece)
+      }
+    : undefined
+
   solveExactCover(numCols, placements.map(p => p.cols), (selectedRows) => {
     const sol: Solution = new Map()
     for (const ri of selectedRows) {
@@ -102,5 +114,5 @@ export function buildAndSolve(
       }
     }
     onSolution(sol)
-  })
+  }, pruner)
 }
