@@ -3,7 +3,6 @@ import type { Cell } from '../core/grid'
 import { NO6_BOARD } from './no6'
 import { PIECES } from '../core/piece'
 import { PENTOMINOES, TETROMINOES } from './square-pieces'
-import { PENTAHEXES } from './hex-pieces'
 
 function rectBoard(rows: number, cols: number): Cell[] {
   const cells: Cell[] = []
@@ -34,24 +33,7 @@ export const PUZZLES: PuzzleDef[] = [
     id: 'tetromino-5x8',
     name: 'テトロミノ 5×8',
     board: rectBoard(5, 8),
-    pieces: [...TETROMINOES, ...TETROMINOES],  // 5種×2セット = 10ピース
+    pieces: [...TETROMINOES, ...TETROMINOES],
     gridType: 'square',
   },
-  {
-    id: 'pentahex-parallelogram',
-    name: 'ペンタヘックス 11×10',
-    board: parallelogramBoard(11, 10),
-    pieces: PENTAHEXES,
-    gridType: 'hexagonal',
-  },
 ]
-
-function parallelogramBoard(rows: number, cols: number): Cell[] {
-  const cells: Cell[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let q = 0; q < cols; q++) {
-      cells.push({ row: r, col: q, dir: 0 })
-    }
-  }
-  return cells
-}
