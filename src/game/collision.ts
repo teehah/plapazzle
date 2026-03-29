@@ -89,7 +89,7 @@ export function hasObstacleOverlap(
   const svgBbox = svgCellsBbox(orientedCells, cellSize, gridType)
   const halfW = (svgBbox.maxX - svgBbox.minX) / 2
   const halfH = (svgBbox.maxY - svgBbox.minY) / 2
-  return hasOverlapAtFast(piecePos.x, piecePos.y, halfW, halfH, cellSize * 0.3, obstacles)
+  return hasOverlapAtFast(piecePos.x, piecePos.y, halfW, halfH, cellSize * 0.1, obstacles)
 }
 
 /**
@@ -104,7 +104,7 @@ export function pushOutOfObstacles(
   gridType: GridType,
   obstacles: Rect[],
 ): { x: number; y: number } | null {
-  const margin = cellSize * 0.3
+  const margin = cellSize * 0.1
   const step = cellSize * 0.5
   const maxSteps = 20
   const numDirs = 12
