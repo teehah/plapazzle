@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { MeshTransmissionMaterial } from '@react-three/drei'
 import type { Cell } from '../core/grid'
 import type { GridType } from '../core/grid-ops'
 import { pieceToGeometry, pieceRimLineGeometry } from './geometry'
@@ -38,22 +39,30 @@ export function PieceMesh({
 
   return (
     <group position={position} scale={[scale, scale, scale]}>
+      {/* フェイクコースティクス: ライト方向にオフセット + 拡大 + 多層ぼかし */}
+      <mesh geometry={geometry} position={[3, -2, -2.2]} scale={[1.15, 1.15, 1]}>
+        <meshBasicMaterial color={color} transparent opacity={0.08} depthWrite={false} />
+      </mesh>
+      <mesh geometry={geometry} position={[2.5, -1.5, -2.1]} scale={[1.08, 1.08, 1]}>
+        <meshBasicMaterial color={color} transparent opacity={0.15} depthWrite={false} />
+      </mesh>
+      <mesh geometry={geometry} position={[2, -1, -2]} scale={[1.03, 1.03, 1]}>
+        <meshBasicMaterial color={color} transparent opacity={0.2} depthWrite={false} />
+      </mesh>
       <mesh ref={meshRef} geometry={geometry}>
-        <meshPhysicalMaterial
-          color={color}
-          transmission={1.0}
-          transparent
-          opacity={1.0}
-          roughness={0.1}
-          metalness={0}
+        <MeshTransmissionMaterial
+          transmission={0.6}
+          roughness={0.03}
+          thickness={6}
           ior={1.5}
-          thickness={0.5}
+          chromaticAberration={0.02}
+          anisotropy={0}
+          color={color}
           attenuationColor={attenuationColor}
-          attenuationDistance={10}
-          clearcoat={0.3}
-          clearcoatRoughness={0.1}
-          envMapIntensity={1.5}
-          side={THREE.DoubleSide}
+          attenuationDistance={30}
+          envMapIntensity={3}
+          samples={4}
+          resolution={256}
         />
       </mesh>
       <lineLoop geometry={rimLines.outer}>

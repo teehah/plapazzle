@@ -350,6 +350,7 @@ function Scene({
 
   return (
     <>
+      <color attach="background" args={[darkMode ? '#0a0a1a' : '#f5f2ef']} />
       <Lighting darkMode={darkMode} />
       <BoardMesh cells={puzzle.board} cellSize={CELL_SIZE} gridType={puzzle.gridType} />
       {state.pieces.map(ps => {
@@ -425,7 +426,7 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   return (
     <div style={{
       width: '100vw', height: '100dvh', position: 'relative',
-      background: darkMode ? '#0a0a1a' : '#e8e0d8',
+      background: darkMode ? '#0a0a1a' : '#f5f2ef',
       touchAction: 'none',
     }}>
       <div style={{
