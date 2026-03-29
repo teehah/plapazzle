@@ -1,9 +1,10 @@
-import { useReducer, useEffect, useState, useRef, useMemo } from 'react'
+import { useReducer, useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import type { PuzzleDef } from '../core/puzzle'
 import type { Cell } from '../core/grid'
+import { GRID_OPS } from '../core/grid-ops'
 import { initGameState, gameReducer } from '../game/state'
 import type { GameState } from '../game/state'
 import { getOrientedCells, getPlacedCells } from '../game/placement'
@@ -21,9 +22,17 @@ import {
 } from '../game/collision'
 import { BoardMesh } from '../three/BoardMesh'
 import { PieceMesh } from '../three/PieceMesh'
+import { HintOverlay } from '../three/HintOverlay'
 import { Lighting } from '../three/Lighting'
 import { SoundEngine } from '../audio/sound'
 import { formatTime } from '../utils/format'
+import { loadSolutions, type SolutionData } from '../game/solution-loader'
+import {
+  findCompatibleSolutions,
+  getHint,
+  findPlacement,
+  type HintResult,
+} from '../game/hint'
 
 const CELL_SIZE = 30
 
@@ -106,6 +115,8 @@ function Scene({
   darkMode,
   draggingPieceId,
   setDraggingPieceId,
+  hintCells,
+  hintColor,
 }: {
   puzzle: PuzzleDef
   state: GameState
@@ -117,6 +128,8 @@ function Scene({
   darkMode: boolean
   draggingPieceId: string | null
   setDraggingPieceId: (id: string | null) => void
+  hintCells: Cell[] | null
+  hintColor: string | null
 }) {
   const { camera, gl, viewport } = useThree()
   const viewportRef = useRef(viewport)
@@ -352,6 +365,15 @@ function Scene({
     <>
       <Lighting darkMode={darkMode} />
       <BoardMesh cells={puzzle.board} cellSize={CELL_SIZE} gridType={puzzle.gridType} />
+      {hintCells && hintColor && (
+        <HintOverlay
+          cells={hintCells}
+          cellSize={CELL_SIZE}
+          gridType={puzzle.gridType}
+          color={hintColor}
+          boardOffset={boardOffset}
+        />
+      )}
       {state.pieces.map(ps => {
         const piece = puzzle.pieces[ps.pieceIndex]
         const oriented = getOrientedCells(piece, ps.orientationIndex, ps.flipped, puzzle.gridType)
@@ -390,6 +412,12 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
   const isMobile = 'ontouchstart' in window
   const darkMode = false // TODO: window.matchMedia('(prefers-color-scheme: dark)').matches
 
+  // ヒント関連の state
+  const [solutionData, setSolutionData] = useState<SolutionData | null>(null)
+  const [hintResult, setHintResult] = useState<HintResult | null>(null)
+  const [hintVisible, setHintVisible] = useState(false)
+  const solutionDataRef = useRef<SolutionData | null>(null)
+
   const boardOffset = useMemo(
     () => geometryCenteringOffset(puzzle.board, CELL_SIZE, puzzle.gridType),
     [puzzle],
@@ -399,6 +427,28 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
     () => computeBoardWorldBbox(puzzle.board, CELL_SIZE, puzzle.gridType),
     [puzzle],
   )
+
+  // 解法データのプリロード
+  useEffect(() => {
+    let cancelled = false
+    loadSolutions(puzzle.id)
+      .then(data => {
+        if (!cancelled) {
+          setSolutionData(data)
+          solutionDataRef.current = data
+        }
+      })
+      .catch(() => {
+        // 解法データのロードに失敗してもゲームは続行
+      })
+    return () => { cancelled = true }
+  }, [puzzle.id])
+
+  // ピース配置が変わったらヒントをクリア
+  useEffect(() => {
+    setHintResult(null)
+    setHintVisible(false)
+  }, [state.pieces])
 
   useEffect(() => {
     if (!state.startedAt) {
@@ -422,6 +472,106 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
     }
   }, [state.pieces, puzzle, state.startedAt, soundEngine, onClear])
 
+  // ヒントボタン
+  const handleHint = useCallback(() => {
+    if (hintVisible && hintResult) {
+      // ヒント表示中 → 非表示にする
+      setHintVisible(false)
+      return
+    }
+
+    const data = solutionDataRef.current
+    if (!data) return
+
+    const compatible = findCompatibleSolutions(state.pieces, puzzle, puzzle.gridType, data)
+    if (compatible.length === 0) return
+
+    const hint = getHint(compatible, state.pieces, puzzle, puzzle.gridType, data)
+    if (!hint) return
+
+    setHintResult(hint)
+    setHintVisible(true)
+  }, [hintVisible, hintResult, state.pieces, puzzle])
+
+  // 次の一手ボタン
+  const handleNextMove = useCallback(() => {
+    const data = solutionDataRef.current
+    if (!data) return
+
+    // ヒントが表示中ならそれを使う、なければ新たに計算
+    let hint = hintResult
+    if (!hint) {
+      const compatible = findCompatibleSolutions(state.pieces, puzzle, puzzle.gridType, data)
+      if (compatible.length === 0) return
+      hint = getHint(compatible, state.pieces, puzzle, puzzle.gridType, data)
+      if (!hint) return
+    }
+
+    // ピースの orientation/flip/gridPosition を逆算
+    const pieceIndex = puzzle.pieces.findIndex(p => p.id === hint.pieceId)
+    if (pieceIndex < 0) return
+    const pieceDef = puzzle.pieces[pieceIndex]
+
+    const placement = findPlacement(pieceDef, hint.cells, puzzle.board, puzzle.gridType)
+    if (!placement) return
+
+    // 対応する PieceState を探す（未配置のもの）
+    const ps = state.pieces.find(
+      p => p.pieceId === hint.pieceId && !p.onBoard,
+    )
+    if (!ps) return
+
+    // orientation と flip を設定してからスナップ
+    // まず rotate/flip を適用
+    const targetOrientIdx = placement.orientationIndex
+    const targetFlipped = placement.flipped
+
+    // orient + flip を直接合わせるため、dispatch で回転/フリップを連続で行う必要があるが、
+    // snap dispatch は orientationIndex と flipped を現在の状態に依存するため、
+    // getOrientedCells で計算してからスナップする
+    const oriented = getOrientedCells(pieceDef, targetOrientIdx, targetFlipped, puzzle.gridType)
+    const worldPos = svgSnapToWorld(oriented, placement.gridPosition, CELL_SIZE, puzzle.gridType, boardOffset)
+
+    // 回転を必要数だけ実行
+    const orientations = GRID_OPS[puzzle.gridType].uniqueOrientations(pieceDef.cells)
+    const orientLen = orientations.length
+    const currentOrient = ps.orientationIndex % orientLen
+    const targetOrient = targetOrientIdx % orientLen
+    const rotateTimes = (targetOrient - currentOrient + orientLen) % orientLen
+    const ts = Date.now()
+
+    for (let i = 0; i < rotateTimes; i++) {
+      dispatch({ type: 'rotate', uid: ps.uid, timestamp: ts })
+    }
+
+    // フリップ
+    if (ps.flipped !== targetFlipped) {
+      dispatch({ type: 'flip', uid: ps.uid, timestamp: ts })
+    }
+
+    // スナップ
+    dispatch({
+      type: 'snap',
+      uid: ps.uid,
+      gridPosition: placement.gridPosition,
+      worldPosition: worldPos,
+      timestamp: ts,
+    })
+
+    soundEngine.playSnap()
+    setHintResult(null)
+    setHintVisible(false)
+  }, [hintResult, state.pieces, puzzle, boardOffset, soundEngine, dispatch])
+
+  // ヒントの色を計算
+  const hintDisplayCells = hintVisible && hintResult ? hintResult.cells : null
+  const hintDisplayColor = useMemo(() => {
+    if (!hintResult || !hintVisible) return null
+    const pieceIndex = puzzle.pieces.findIndex(p => p.id === hintResult.pieceId)
+    if (pieceIndex < 0) return null
+    return PIECE_PALETTE[pieceIndex % PIECE_PALETTE.length]
+  }, [hintResult, hintVisible, puzzle.pieces])
+
   return (
     <div style={{
       width: '100vw', height: '100dvh', position: 'relative',
@@ -435,18 +585,53 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
       }}>
         {formatTime(elapsed)}
       </div>
-      <div
-        onClick={onToggleSound}
-        style={{
-          position: 'absolute', top: 12, right: 16, zIndex: 10,
-          padding: '4px 12px', borderRadius: 12,
-          background: soundEnabled ? 'rgba(52,73,94,0.1)' : 'rgba(0,0,0,0.03)',
-          border: `1px solid ${soundEnabled ? 'rgba(52,73,94,0.25)' : 'rgba(0,0,0,0.1)'}`,
-          color: soundEnabled ? 'rgba(52,73,94,0.7)' : 'rgba(0,0,0,0.25)',
-          fontSize: 12, cursor: 'pointer', userSelect: 'none',
-        }}
-      >
-        {soundEnabled ? 'SOUND ON' : 'SOUND OFF'}
+      <div style={{
+        position: 'absolute', top: 12, right: 16, zIndex: 10,
+        display: 'flex', gap: 8, alignItems: 'center',
+      }}>
+        {/* ヒントボタン */}
+        {solutionData && (
+          <div
+            onClick={handleHint}
+            style={{
+              padding: '4px 12px', borderRadius: 12,
+              background: hintVisible ? 'rgba(243,156,18,0.15)' : 'rgba(52,73,94,0.08)',
+              border: `1px solid ${hintVisible ? 'rgba(243,156,18,0.4)' : 'rgba(52,73,94,0.15)'}`,
+              color: hintVisible ? 'rgba(243,156,18,0.9)' : 'rgba(52,73,94,0.5)',
+              fontSize: 12, cursor: 'pointer', userSelect: 'none',
+            }}
+          >
+            HINT
+          </div>
+        )}
+        {/* 次の一手ボタン */}
+        {solutionData && (
+          <div
+            onClick={handleNextMove}
+            style={{
+              padding: '4px 12px', borderRadius: 12,
+              background: 'rgba(52,73,94,0.08)',
+              border: '1px solid rgba(52,73,94,0.15)',
+              color: 'rgba(52,73,94,0.5)',
+              fontSize: 12, cursor: 'pointer', userSelect: 'none',
+            }}
+          >
+            AUTO
+          </div>
+        )}
+        {/* サウンドボタン */}
+        <div
+          onClick={onToggleSound}
+          style={{
+            padding: '4px 12px', borderRadius: 12,
+            background: soundEnabled ? 'rgba(52,73,94,0.1)' : 'rgba(0,0,0,0.03)',
+            border: `1px solid ${soundEnabled ? 'rgba(52,73,94,0.25)' : 'rgba(0,0,0,0.1)'}`,
+            color: soundEnabled ? 'rgba(52,73,94,0.7)' : 'rgba(0,0,0,0.25)',
+            fontSize: 12, cursor: 'pointer', userSelect: 'none',
+          }}
+        >
+          {soundEnabled ? 'SOUND ON' : 'SOUND OFF'}
+        </div>
       </div>
       <Canvas style={{ width: '100%', height: '100%', touchAction: 'none' }}>
         <AutoZoomCamera boardBbox={boardBbox} />
@@ -461,6 +646,8 @@ export function GameScreen({ puzzle, soundEngine, soundEnabled, onToggleSound, o
           darkMode={darkMode}
           draggingPieceId={draggingPieceId}
           setDraggingPieceId={setDraggingPieceId}
+          hintCells={hintDisplayCells}
+          hintColor={hintDisplayColor}
         />
       </Canvas>
     </div>

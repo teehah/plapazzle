@@ -47,15 +47,6 @@ export function computeBoardWorldBbox(
   return { minX: -halfW, maxX: halfW, minY: -halfH, maxY: halfH }
 }
 
-function padRect(rect: Rect, margin: number): Rect {
-  return {
-    minX: rect.minX - margin,
-    maxX: rect.maxX + margin,
-    minY: rect.minY - margin,
-    maxY: rect.maxY + margin,
-  }
-}
-
 /**
  * half-extent + margin から、位置 (x,y) での padded bbox を作り障害物と重なるか判定。
  * bbox の形状は位置に依存しないため、half-extent を事前計算して渡す。

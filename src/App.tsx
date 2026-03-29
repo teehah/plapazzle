@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { PUZZLES } from './data/puzzles'
 import { TitleScreen } from './screens/TitleScreen'
 import { PuzzleSelectScreen } from './screens/PuzzleSelectScreen'
@@ -10,6 +10,8 @@ import { SoundEngine } from './audio/sound'
 import { GameStorage } from './storage/db'
 import type { PuzzleRecord } from './storage/db'
 import type { GameState } from './game/state'
+import { loadSolutions, type SolutionData } from './game/solution-loader'
+import { userPlacementToKeys, matchSolution } from './game/solution-matching'
 
 type AppState =
   | { screen: 'title' }
@@ -37,6 +39,7 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>({ screen: 'title' })
   const [records, setRecords] = useState<Map<string, PuzzleRecord>>(new Map())
   const [soundEnabled, setSoundEnabled] = useState(false)
+  const solutionCache = useRef<Map<string, SolutionData>>(new Map())
 
   const navigate = useCallback((next: AppState) => {
     history.pushState({ screen: next.screen }, '')
@@ -79,7 +82,30 @@ export default function App() {
   }, [soundEnabled])
 
   const handleClear = useCallback(async (gameState: GameState, clearTimeMs: number) => {
-    const solutionId = 0  // TODO: solution matching after solution data generation
+    let solutionId = 0
+
+    try {
+      // 解法データを取得（キャッシュ優先）
+      let data = solutionCache.current.get(gameState.puzzleId)
+      if (!data) {
+        data = await loadSolutions(gameState.puzzleId)
+        solutionCache.current.set(gameState.puzzleId, data)
+      }
+
+      // ユーザの配置をマッチング
+      const puzzle = PUZZLES.find(p => p.id === gameState.puzzleId)
+      if (puzzle) {
+        const userKeys = userPlacementToKeys(gameState.pieces, puzzle, gameState.gridType)
+        const matched = matchSolution(userKeys, data)
+        if (matched !== null) {
+          solutionId = matched
+        }
+      }
+    } catch {
+      // 解法データのロードに失敗してもゲームは続行
+      console.warn('Failed to match solution, using solutionId=0')
+    }
+
     navigate({
       screen: 'clear-animation',
       puzzleId: gameState.puzzleId,
