@@ -57,7 +57,7 @@ export function initGameState(puzzle: PuzzleDef): GameState {
   }))
 
   const board = svgBboxHalfExtent(puzzle.board, INIT_CELL_SIZE, puzzle.gridType)
-  const margin = INIT_CELL_SIZE * 0.3
+  const margin = INIT_CELL_SIZE * 0.1
 
   function pieceBbox(x: number, y: number, he: { hw: number; hh: number }): Rect {
     return { minX: x - he.hw, maxX: x + he.hw, minY: y - he.hh, maxY: y + he.hh }
@@ -71,7 +71,7 @@ export function initGameState(puzzle: PuzzleDef): GameState {
   // 配置済みピースの rect リスト（障害物として追加していく）
   const obstacles: Rect[] = [boardRect]
 
-  const radius = 150
+  const radius = 120
   const step = INIT_CELL_SIZE * 0.5
   const numDirs = 12
   const maxSteps = 20

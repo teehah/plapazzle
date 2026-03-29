@@ -15,10 +15,10 @@ export function Lighting({ darkMode }: Props) {
   }
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 30]} intensity={0.8} castShadow />
-      <directionalLight position={[-5, -5, 20]} intensity={0.3} />
-      <Environment preset="apartment" />
+      <ambientLight intensity={0.8} />
+      <directionalLight position={[12, 7, 10]} intensity={3.0} />
+      <directionalLight position={[-10, -5, 6]} intensity={1.5} />
+      <Environment preset="city" />
     </>
   )
 }
