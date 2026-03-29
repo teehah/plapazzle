@@ -56,17 +56,20 @@ function padRect(rect: Rect, margin: number): Rect {
   }
 }
 
-function hasOverlapAt(
-  x: number,
-  y: number,
-  orientedCells: Cell[],
-  cellSize: number,
-  gridType: GridType,
+/**
+ * half-extent + margin から、位置 (x,y) での padded bbox を作り障害物と重なるか判定。
+ * bbox の形状は位置に依存しないため、half-extent を事前計算して渡す。
+ */
+function hasOverlapAtFast(
+  x: number, y: number,
+  halfW: number, halfH: number,
   margin: number,
   obstacles: Rect[],
 ): boolean {
-  const pBbox = computePieceWorldBbox(orientedCells, cellSize, gridType, { x, y })
-  const padded = padRect(pBbox, margin)
+  const padded: Rect = {
+    minX: x - halfW - margin, maxX: x + halfW + margin,
+    minY: y - halfH - margin, maxY: y + halfH + margin,
+  }
   for (const obs of obstacles) {
     if (rectsOverlap(padded, obs)) return true
   }
@@ -83,8 +86,10 @@ export function hasObstacleOverlap(
   gridType: GridType,
   obstacles: Rect[],
 ): boolean {
-  const margin = cellSize * 0.3
-  return hasOverlapAt(piecePos.x, piecePos.y, orientedCells, cellSize, gridType, margin, obstacles)
+  const svgBbox = svgCellsBbox(orientedCells, cellSize, gridType)
+  const halfW = (svgBbox.maxX - svgBbox.minX) / 2
+  const halfH = (svgBbox.maxY - svgBbox.minY) / 2
+  return hasOverlapAtFast(piecePos.x, piecePos.y, halfW, halfH, cellSize * 0.3, obstacles)
 }
 
 /**
@@ -104,7 +109,12 @@ export function pushOutOfObstacles(
   const maxSteps = 20
   const numDirs = 12
 
-  if (!hasOverlapAt(piecePos.x, piecePos.y, orientedCells, cellSize, gridType, margin, obstacles)) {
+  // half-extent を1回だけ計算（ループ内で再計算しない）
+  const svgBbox = svgCellsBbox(orientedCells, cellSize, gridType)
+  const halfW = (svgBbox.maxX - svgBbox.minX) / 2
+  const halfH = (svgBbox.maxY - svgBbox.minY) / 2
+
+  if (!hasOverlapAtFast(piecePos.x, piecePos.y, halfW, halfH, margin, obstacles)) {
     return null
   }
 
@@ -119,7 +129,7 @@ export function pushOutOfObstacles(
     for (let s = 1; s <= maxSteps; s++) {
       const x = piecePos.x + dirX * step * s
       const y = piecePos.y + dirY * step * s
-      if (!hasOverlapAt(x, y, orientedCells, cellSize, gridType, margin, obstacles)) {
+      if (!hasOverlapAtFast(x, y, halfW, halfH, margin, obstacles)) {
         const dist = s * step
         if (dist < bestDist) {
           bestDist = dist

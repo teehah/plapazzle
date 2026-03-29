@@ -27,8 +27,6 @@ import type { Position, GridPosition } from './state'
 import { svgBboxCenter } from './bbox'
 import { gridToWorld, getPlacedCells } from './placement'
 
-export { svgBboxCenter } from './bbox'
-
 /**
  * セル配列の SVG 座標系での重心を返す。
  */

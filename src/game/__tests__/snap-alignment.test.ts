@@ -5,7 +5,8 @@
  * svgSnapToWorld も同じ bbox center を使わなければグリッドズレが発生する。
  */
 import { describe, it, expect } from 'vitest'
-import { svgBboxCenter, svgSnapToWorld } from '../coords'
+import { svgBboxCenter } from '../bbox'
+import { svgSnapToWorld } from '../coords'
 import { getPlacedCells } from '../placement'
 import { GRID_OPS } from '../../core/grid-ops'
 import type { Cell } from '../../core/grid'

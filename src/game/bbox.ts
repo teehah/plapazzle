@@ -36,14 +36,16 @@ export function svgCellsBbox(
   gridType: GridType,
 ): SvgBbox {
   const ops = GRID_OPS[gridType]
-  const allPoints: [number, number][] = []
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   for (const cell of cells) {
-    const pts = ops.cellToSvgPoints(cell, cellSize)
-    for (const pt of pts) {
-      allPoints.push(pt)
+    for (const [px, py] of ops.cellToSvgPoints(cell, cellSize)) {
+      if (px < minX) minX = px
+      if (px > maxX) maxX = px
+      if (py < minY) minY = py
+      if (py > maxY) maxY = py
     }
   }
-  return svgPointsBbox(allPoints)
+  return { minX, maxX, minY, maxY }
 }
 
 /**
@@ -76,27 +78,17 @@ export function svgBboxHalfExtent(
 
 /**
  * geometry.ts のセンタリングオフセットを計算する。
- * geometry.ts は x = svgX, y = -svgY で Shape を作り、
- * 結果のジオメトリを bbox 中心でセンタリングする。
- *
- * このオフセットは (centerSvgX, -centerSvgY) の形式で返す。
+ * geometry.ts は x = svgX, y = -svgY で Shape を作るため、
+ * Y軸を反転した bbox 中心を返す。
  */
 export function geometryCenteringOffset(
   cells: Cell[],
   cellSize: number,
   gridType: GridType,
 ): { x: number; y: number } {
-  const ops = GRID_OPS[gridType]
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const cell of cells) {
-    const pts = ops.cellToSvgPoints(cell, cellSize)
-    for (const [px, py] of pts) {
-      // geometry.ts と同じ座標系: x = svgX, y = -svgY
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (-py < minY) minY = -py
-      if (-py > maxY) maxY = -py
-    }
+  const bbox = svgCellsBbox(cells, cellSize, gridType)
+  return {
+    x: (bbox.minX + bbox.maxX) / 2,
+    y: -(bbox.minY + bbox.maxY) / 2,
   }
-  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
 }
