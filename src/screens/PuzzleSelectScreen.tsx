@@ -61,15 +61,17 @@ function BoardPreview({ board, gridType }: { board: Cell[]; gridType: GridType }
 
 export function PuzzleSelectScreen({ puzzles, records, onSelect, onGallery }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const dragState = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false, targetId: '' })
+  const dragState = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false, targetId: '', noCardTap: false })
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const el = scrollRef.current
     if (!el) return
+    const target = e.target as HTMLElement
     // タップ対象のパズルIDを取得
-    const card = (e.target as HTMLElement).closest<HTMLElement>('[data-puzzle-id]')
+    const card = target.closest<HTMLElement>('[data-puzzle-id]')
     const targetId = card?.dataset.puzzleId ?? ''
-    dragState.current = { dragging: true, startX: e.clientX, scrollLeft: el.scrollLeft, moved: false, targetId }
+    const noCardTap = !!target.closest('[data-no-card-tap]')
+    dragState.current = { dragging: true, startX: e.clientX, scrollLeft: el.scrollLeft, moved: false, targetId, noCardTap }
     el.setPointerCapture(e.pointerId)
     el.style.scrollSnapType = 'none'
     el.style.cursor = 'grabbing'
@@ -91,11 +93,15 @@ export function PuzzleSelectScreen({ puzzles, records, onSelect, onGallery }: Pr
     el.style.scrollSnapType = 'x mandatory'
     el.style.cursor = ''
 
-    // タップ（ドラッグなし）→ パズル選択
+    // タップ（ドラッグなし）
     if (!moved && targetId) {
-      onSelect(targetId)
+      if (dragState.current.noCardTap) {
+        onGallery(targetId)
+      } else {
+        onSelect(targetId)
+      }
     }
-  }, [onSelect])
+  }, [onSelect, onGallery])
 
   return (
     <div style={{
@@ -164,6 +170,7 @@ export function PuzzleSelectScreen({ puzzles, records, onSelect, onGallery }: Pr
                   <span>{record.discoveredSolutionIds.length} 解発見</span>
                   {cleared && (
                     <span
+                      data-no-card-tap
                       onClick={e => { e.stopPropagation(); onGallery(puzzle.id) }}
                       style={{ color: 'rgba(52,73,94,0.7)', cursor: 'pointer', marginLeft: 'auto' }}
                     >
